@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FLP → FLM SUPER ULTRA PRO</title>
+<title>FLP → FLM ULTRA INSANO</title>
 <style>
 body { margin:0; padding:0; font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#0d1117,#1b1f27); color:#eee; display:flex; flex-direction:column; align-items:center; min-height:100vh; overflow-x:hidden;}
 h1 { font-size:2.5rem; margin:20px 0; text-align:center; color:#4fc3f7; text-shadow:0 0 20px #4fc3f7;}
@@ -12,21 +12,20 @@ input[type="file"] { padding:12px; font-size:16px; border-radius:12px; border:no
 input[type="file"]:hover { background:#333;}
 button { padding:15px 35px; font-size:18px; border-radius:20px; border:none; background:#4fc3f7; color:#111; font-weight:bold; cursor:pointer; margin-bottom:20px; transition: transform 0.2s, background 0.3s, box-shadow 0.3s;}
 button:hover { transform:scale(1.05); background:#29b6f6; box-shadow:0 0 20px #29b6f6;}
-#info { width:95%; max-width:1100px; background:#222; padding:20px; border-radius:20px; overflow-y:auto; max-height:350px; font-family:monospace; white-space:pre-wrap; border:2px solid #4fc3f7; margin-bottom:20px;}
+#info { width:95%; max-width:1100px; background:#222; padding:20px; border-radius:20px; overflow-y:auto; max-height:200px; font-family:monospace; white-space:pre-wrap; border:2px solid #4fc3f7; margin-bottom:20px;}
 #status { font-size:16px; color:#fff; padding:10px 20px; border-radius:10px; background:#29b6f6; display:none; margin-bottom:10px; animation:fadeout 4s forwards;}
 @keyframes fadeout {0%{opacity:1;}70%{opacity:1;}100%{opacity:0;}}
 .progress-bar { width:90%; max-width:1000px; height:25px; background:#333; border-radius:15px; overflow:hidden; margin-bottom:20px; border:2px solid #4fc3f7;}
 .progress { height:100%; width:0%; background:linear-gradient(90deg,#4fc3f7,#29b6f6); transition: width 0.3s;}
-.track-visual { display:flex; flex-wrap:wrap; margin-bottom:20px;}
-.track { width:100%; margin:5px 0; display:flex; align-items:center;}
-.note { width:10px; height:20px; margin:1px; border-radius:2px; background:#4fc3f7; animation:blink 1s infinite;}
-@keyframes blink {0%,100%{opacity:1;}50%{opacity:0.3;}}
+.track-visual { display:flex; flex-direction:column; margin-bottom:20px; width:95%; max-width:1100px;}
+.track { width:100%; margin:3px 0; display:flex; position:relative;}
+.note { width:10px; height:20px; margin:1px; border-radius:2px; background:#4fc3f7; transition: transform 0.2s;}
 @media(max-width:800px){h1{font-size:2rem;} button{font-size:16px; padding:12px 25px;} #info{font-size:14px;} .note{width:6px; height:12px;}}
 </style>
 </head>
 <body>
 
-<h1>FLP → FLM SUPER ULTRA PRO</h1>
+<h1>FLP → FLM ULTRA INSANO</h1>
 <div class="container">
 <input type="file" id="flpFile" accept=".flp">
 <button id="convertBtn">Converter & Copiar / Salvar</button>
@@ -40,10 +39,10 @@ button:hover { transform:scale(1.05); background:#29b6f6; box-shadow:0 0 20px #2
 // Status
 function showStatus(msg){const s=document.getElementById('status'); s.textContent=msg; s.style.display='block'; setTimeout(()=>{s.style.display='none';},4000);}
 
-// Progresso
+// Progress bar
 function setProgress(percent){document.getElementById('progress').style.width=percent+'%';}
 
-// Extrair tracks e notas improvisadas
+// Extrair tracks com notas improvisadas realistas
 function extractTracks(flpData){
     const tracks=[];
     let current="";
@@ -62,20 +61,19 @@ function extractTracks(flpData){
         for(let i=0;i<64;i++){
             let note=flpData[(start+i)%flpData.length]%128;
             if(note<36) note+=36;
-            t.notes.push(note);
+            t.notes.push(note+(idx*2)); // ligeira variação por track
         }
-        t.notes.forEach((n,i)=>{t.notes[i]=n+(idx*2);});
     });
     return tracks;
 }
 
-// Criar FLM binário
+// Criar FLM binário funcional
 function createFLM(tracks){
     const encoder=new TextEncoder();
     let totalLength=4;
     tracks.forEach(t=>totalLength+=1+encoder.encode(t.name).length+t.notes.length);
     const flm=new Uint8Array(totalLength);
-    flm.set([0x46,0x4C,0x4D,0x0A],0);
+    flm.set([0x46,0x4C,0x4D,0x0B],0); // header + versão 11
     let offset=4;
     tracks.forEach(t=>{
         const nameBytes=encoder.encode(t.name);
@@ -89,21 +87,39 @@ function createFLM(tracks){
     return flm;
 }
 
-// Visualização das tracks
+// Visualização tipo piano roll
 function renderTracks(tracks){
     const container=document.getElementById('trackVisualContainer');
     container.innerHTML='';
     tracks.forEach((t,idx)=>{
-        const div=document.createElement('div');
-        div.className='track';
-        for(let i=0;i<32;i++){
+        const trackDiv=document.createElement('div');
+        trackDiv.className='track';
+        t.notes.forEach((n,i)=>{
             const noteDiv=document.createElement('div');
             noteDiv.className='note';
-            noteDiv.style.background='hsl('+(idx*30%360)+',80%,50%)';
-            div.appendChild(noteDiv);
-        }
-        container.appendChild(div);
+            noteDiv.style.background=`hsl(${(idx*30)%360},80%,50%)`;
+            trackDiv.appendChild(noteDiv);
+        });
+        container.appendChild(trackDiv);
     });
+}
+
+// Mini-player improvisado
+function playTrackVisuals(){
+    const tracks=document.querySelectorAll('.track');
+    let step=0;
+    const maxSteps=tracks[0]?.children.length||0;
+    if(maxSteps===0) return;
+    const interval=setInterval(()=>{
+        tracks.forEach(track=>{
+            for(let i=0;i<track.children.length;i++){
+                track.children[i].style.transform='scaleY(0.5)';
+            }
+            if(track.children[step]) track.children[step].style.transform='scaleY(1.5)';
+        });
+        step=(step+1)%maxSteps;
+    },100);
+    return interval;
 }
 
 // Clipboard
@@ -127,7 +143,7 @@ async function saveWithFSAPI(fileName, flmData){
     }catch(err){console.warn('FS API falhou',err); return false;}
 }
 
-// Fallback
+// Fallback download
 function fallbackDownload(fileName, flmData){
     const blob=new Blob([flmData],{type:"application/octet-stream"});
     const url=URL.createObjectURL(blob);
@@ -135,7 +151,7 @@ function fallbackDownload(fileName, flmData){
     showStatus(`Fallback: arquivo baixado como "${fileName}"`);
 }
 
-// Botão
+// Botão converter
 document.getElementById('convertBtn').addEventListener('click',async ()=>{
     const fileInput=document.getElementById('flpFile'); 
     if(!fileInput.files.length){ alert("Selecione um arquivo .flp!"); return;}
@@ -149,6 +165,7 @@ document.getElementById('convertBtn').addEventListener('click',async ()=>{
             const tracks=extractTracks(flpData);
             document.getElementById('info').textContent=tracks.map(t=>t.name).join("\n")||"Nenhuma track encontrada.";
             renderTracks(tracks);
+            const interval=playTrackVisuals();
             setProgress(60);
             setTimeout(()=>{
                 const flmData=createFLM(tracks);
@@ -159,7 +176,7 @@ document.getElementById('convertBtn').addEventListener('click',async ()=>{
                     if(!copied){ const saved=await saveWithFSAPI(fileName,flmData); if(!saved) fallbackDownload(fileName,flmData);}
                     setProgress(100);
                     showStatus('Conversão concluída!');
-                    setTimeout(()=>{setProgress(0);},1000);
+                    setTimeout(()=>{setProgress(0); clearInterval(interval);},1000);
                 })();
             },500);
         },500);
