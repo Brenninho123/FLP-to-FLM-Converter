@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>FLP → FLM</title>
+<style>
+body { font-family: Arial, sans-serif; background: #111; color: #eee; padding: 20px; }
+h1 { margin-bottom: 10px; }
+input, button { margin-top: 10px; padding: 10px; font-size: 16px; }
+pre { background: #222; padding: 10px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+button { cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>FLP → FLM PRO INSANO</h1>
+<input type="file" id="flpFile" accept=".flp"><br>
+<button id="convertBtn">Converter e Copiar/Salvar</button>
+
+<h2>Informações Extraídas</h2>
+<pre id="info">Nenhum arquivo carregado.</pre>
+
+<script>
+// Extrair strings legíveis do FLP
+function extractStrings(flpData) {
+    const strings = [];
+    let current = "";
+    for (let i = 0; i < flpData.length; i++) {
+        const byte = flpData[i];
+        if (byte >= 32 && byte <= 126) current += String.fromCharCode(byte);
+        else {
+            if (current.length > 2) strings.push(current.trim());
+            current = "";
+        }
+    }
+    if (current.length > 2) strings.push(current.trim());
+    return strings;
+}
+
+// Criar tracks FLM
+function createTracks(strings) {
+    const tracks = [];
+    strings.forEach(name => {
+        const nameBytes = new TextEncoder().encode(name);
+        const track = new Uint8Array(1 + nameBytes.length + 8);
+        track[0] = nameBytes.length;
+        track.set(nameBytes, 1);
+        track.set([0,0,0,0,0,0,0,0], 1 + nameBytes.length);
+        tracks.push(track);
+    });
+    return tracks;
+}
+
+// Converter FLP → FLM
+function convertFLPtoFLM(file, callback) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const flpData = new Uint8Array(e.target.result);
+        const strings = extractStrings(flpData);
+        const tracks = createTracks(strings);
+        const flmHeader = new Uint8Array([0x46,0x4C,0x4D,0x04]); // versão 4
+        let totalLength = flmHeader.length;
+        tracks.forEach(t => totalLength += t.length);
+        const flmData = new Uint8Array(totalLength);
+        flmData.set(flmHeader, 0);
+        let offset = flmHeader.length;
+        tracks.forEach(t => { flmData.set(t, offset); offset += t.length; });
+        callback(flmData, strings);
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// Tentar copiar para clipboard
+async function copyToClipboard(fileName, flmData) {
+    try {
+        // Criar blob do arquivo
+        const blob = new Blob([flmData], {type: 'application/octet-stream'});
+        // ClipboardItem precisa do objeto {tipo: blob}
+        const item = new ClipboardItem({ [blob.type]: blob });
+        await navigator.clipboard.write([item]);
+        alert(`Arquivo ${fileName} copiado para a área de transferência! Cole onde quiser.`);
+        return true;
+    } catch (err) {
+        console.warn('Clipboard API falhou ou permissão negada', err);
+        return false;
+    }
+}
+
+// Salvar com FS API como fallback
+async function saveWithFSAPI(fileName, flmData) {
+    try {
+        const dirHandle = await window.showDirectoryPicker({ startIn: 'downloads', mode: 'readwrite' });
+        let folderHandle;
+        try { folderHandle = await dirHandle.getDirectoryHandle('Converters', { create: true }); } 
+        catch { folderHandle = dirHandle; }
+        const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(flmData);
+        await writable.close();
+        alert(`Arquivo salvo em ${folderHandle.name}/${fileName}`);
+        return true;
+    } catch(err) {
+        console.warn('FS API falhou, usando download normal.', err);
+        return false;
+    }
+}
+
+// Fallback download automático
+function fallbackDownload(fileName, flmData) {
+    const blob = new Blob([flmData], {type: 'application/octet-stream'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert(`Fallback: arquivo baixado como ${fileName}`);
+}
+
+// Evento do botão
+document.getElementById('convertBtn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('flpFile');
+    if (!fileInput.files.length) { alert("Selecione um arquivo .flp!"); return; }
+    const file = fileInput.files[0];
+
+    convertFLPtoFLM(file, async (flmData, strings) => {
+        document.getElementById('info').textContent = strings.join("\n") || "Nenhuma string legível encontrada.";
+        const fileName = file.name.replace('.flp','.flm');
+
+        // Tentar copiar para clipboard
+        const copied = await copyToClipboard(fileName, flmData);
+        if (!copied) {
+            // Se falhar, tentar salvar com FS API
+            const saved = await saveWithFSAPI(fileName, flmData);
+            if (!saved) fallbackDownload(fileName, flmData); // fallback final
+        }
+    });
+});
+</script>
+</body>
+</html>
