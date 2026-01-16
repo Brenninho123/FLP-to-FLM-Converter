@@ -2,25 +2,118 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FLP → FLM</title>
 <style>
-body { font-family: Arial, sans-serif; background: #111; color: #eee; padding: 20px; }
-h1 { margin-bottom: 10px; }
-input, button { margin-top: 10px; padding: 10px; font-size: 16px; }
-pre { background: #222; padding: 10px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
-button { cursor: pointer; }
+/* Reset básico */
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+
+/* Fundo e layout principal */
+body {
+    background: linear-gradient(135deg, #0d1117, #1b1f27);
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+/* Cabeçalho */
+h1 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #4fc3f7;
+    text-shadow: 0 0 10px #4fc3f7;
+}
+
+/* Input e botão */
+input[type="file"] {
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    background: #222;
+    color: #eee;
+    transition: background 0.3s;
+}
+input[type="file"]:hover {
+    background: #333;
+}
+
+button {
+    margin-top: 15px;
+    padding: 15px 30px;
+    font-size: 18px;
+    border-radius: 12px;
+    border: none;
+    background: #4fc3f7;
+    color: #111;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.3s, box-shadow 0.3s;
+}
+button:hover {
+    transform: scale(1.05);
+    background: #29b6f6;
+    box-shadow: 0 0 15px #29b6f6;
+}
+
+/* Painel de informações */
+#info {
+    margin-top: 20px;
+    width: 90%;
+    max-width: 800px;
+    background: #222;
+    padding: 15px;
+    border-radius: 12px;
+    overflow-y: auto;
+    max-height: 300px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    border: 1px solid #4fc3f7;
+}
+
+/* Mensagem temporária */
+#status {
+    margin-top: 15px;
+    font-size: 16px;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 10px;
+    background: #29b6f6;
+    display: none;
+    animation: fadeout 3s forwards;
+}
+
+@keyframes fadeout {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Responsividade */
+@media (max-width: 600px) {
+    h1 { font-size: 1.5rem; }
+    button { font-size: 16px; padding: 12px 20px; }
+    #info { width: 95%; font-size: 14px; }
+}
 </style>
 </head>
 <body>
-<h1>FLP → FLM PRO INSANO</h1>
-<input type="file" id="flpFile" accept=".flp"><br>
-<button id="convertBtn">Converter e Copiar/Salvar</button>
 
-<h2>Informações Extraídas</h2>
+<h1>FLP → FLM PRO MAX</h1>
+
+<input type="file" id="flpFile" accept=".flp">
+<button id="convertBtn">Converter & Copiar / Salvar</button>
+
 <pre id="info">Nenhum arquivo carregado.</pre>
+<div id="status"></div>
 
 <script>
-// Extrair strings legíveis do FLP
+// Funções básicas do conversor PRO-MAX
 function extractStrings(flpData) {
     const strings = [];
     let current = "";
@@ -36,7 +129,6 @@ function extractStrings(flpData) {
     return strings;
 }
 
-// Criar tracks FLM
 function createTracks(strings) {
     const tracks = [];
     strings.forEach(name => {
@@ -50,14 +142,13 @@ function createTracks(strings) {
     return tracks;
 }
 
-// Converter FLP → FLM
 function convertFLPtoFLM(file, callback) {
     const reader = new FileReader();
     reader.onload = function(e) {
         const flpData = new Uint8Array(e.target.result);
         const strings = extractStrings(flpData);
         const tracks = createTracks(strings);
-        const flmHeader = new Uint8Array([0x46,0x4C,0x4D,0x04]); // versão 4
+        const flmHeader = new Uint8Array([0x46,0x4C,0x4D,0x05]);
         let totalLength = flmHeader.length;
         tracks.forEach(t => totalLength += t.length);
         const flmData = new Uint8Array(totalLength);
@@ -69,23 +160,29 @@ function convertFLPtoFLM(file, callback) {
     reader.readAsArrayBuffer(file);
 }
 
-// Tentar copiar para clipboard
+// Função de status temporário
+function showStatus(msg) {
+    const status = document.getElementById('status');
+    status.textContent = msg;
+    status.style.display = 'block';
+    setTimeout(() => { status.style.display = 'none'; }, 3000);
+}
+
+// Clipboard
 async function copyToClipboard(fileName, flmData) {
     try {
-        // Criar blob do arquivo
         const blob = new Blob([flmData], {type: 'application/octet-stream'});
-        // ClipboardItem precisa do objeto {tipo: blob}
         const item = new ClipboardItem({ [blob.type]: blob });
         await navigator.clipboard.write([item]);
-        alert(`Arquivo ${fileName} copiado para a área de transferência! Cole onde quiser.`);
+        showStatus(`Arquivo "${fileName}" copiado para a área de transferência!`);
         return true;
     } catch (err) {
-        console.warn('Clipboard API falhou ou permissão negada', err);
+        console.warn('Clipboard API falhou', err);
         return false;
     }
 }
 
-// Salvar com FS API como fallback
+// FS API
 async function saveWithFSAPI(fileName, flmData) {
     try {
         const dirHandle = await window.showDirectoryPicker({ startIn: 'downloads', mode: 'readwrite' });
@@ -96,17 +193,17 @@ async function saveWithFSAPI(fileName, flmData) {
         const writable = await fileHandle.createWritable();
         await writable.write(flmData);
         await writable.close();
-        alert(`Arquivo salvo em ${folderHandle.name}/${fileName}`);
+        showStatus(`Arquivo salvo em ${folderHandle.name}/${fileName}`);
         return true;
     } catch(err) {
-        console.warn('FS API falhou, usando download normal.', err);
+        console.warn('FS API falhou', err);
         return false;
     }
 }
 
-// Fallback download automático
+// Fallback download
 function fallbackDownload(fileName, flmData) {
-    const blob = new Blob([flmData], {type: 'application/octet-stream'});
+    const blob = new Blob([flmData], {type: "application/octet-stream"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -115,7 +212,7 @@ function fallbackDownload(fileName, flmData) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    alert(`Fallback: arquivo baixado como ${fileName}`);
+    showStatus(`Fallback: arquivo baixado como "${fileName}"`);
 }
 
 // Evento do botão
@@ -128,15 +225,14 @@ document.getElementById('convertBtn').addEventListener('click', async () => {
         document.getElementById('info').textContent = strings.join("\n") || "Nenhuma string legível encontrada.";
         const fileName = file.name.replace('.flp','.flm');
 
-        // Tentar copiar para clipboard
         const copied = await copyToClipboard(fileName, flmData);
         if (!copied) {
-            // Se falhar, tentar salvar com FS API
             const saved = await saveWithFSAPI(fileName, flmData);
-            if (!saved) fallbackDownload(fileName, flmData); // fallback final
+            if (!saved) fallbackDownload(fileName, flmData);
         }
     });
 });
 </script>
+
 </body>
 </html>
