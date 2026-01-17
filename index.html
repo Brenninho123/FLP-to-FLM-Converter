@@ -2,40 +2,40 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>FLM Studio Extreme (Offline)</title>
+<title>FLM Engine – Importador Real</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 *{box-sizing:border-box;font-family:Segoe UI,Arial}
-body{margin:0;background:#0a0f1e;color:#e5e7eb}
+body{margin:0;background:#020617;color:#e5e7eb}
 header{text-align:center;padding:20px;font-size:2.4em;color:#38bdf8}
-.controls, .panel{
-  width:95%;max-width:1400px;margin:10px auto;
-  background:#020617;border-radius:16px;padding:15px
+.panel,.controls{
+  width:95%;max-width:1500px;margin:10px auto;
+  background:#020617;border-radius:18px;padding:15px;border:1px solid #0f172a
 }
 .controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
-button,input,select{
+button,input{
   padding:12px 16px;border-radius:10px;border:none;font-size:15px
 }
 button{background:#38bdf8;font-weight:bold;cursor:pointer}
 button:hover{background:#0ea5e9}
-pre{white-space:pre-wrap;font-family:monospace}
-#roll{overflow-x:auto}
+#roll{overflow-x:auto;margin-top:10px}
 .track{display:flex;margin-bottom:4px}
 .cell{
   width:16px;height:26px;margin:1px;border-radius:4px;
   background:#1f2937;cursor:pointer
 }
 .cell.on{background:#38bdf8;box-shadow:0 0 6px #38bdf8}
+pre{white-space:pre-wrap;font-family:monospace}
 footer{text-align:center;padding:10px;opacity:.5}
 </style>
 </head>
 <body>
 
-<header>FLM STUDIO EXTREME (OFFLINE)</header>
+<header>FLM ENGINE – IMPORTADOR REAL</header>
 
 <div class="controls">
-  <input type="file" id="file" accept=".flp,.flm">
-  <button onclick="load()">Carregar</button>
+  <input type="file" id="file" accept=".flm,.flp">
+  <button onclick="loadFile()">Importar</button>
   <label>BPM <input type="number" id="bpm" value="120" style="width:70px"></label>
   <button onclick="play()">▶ Play</button>
   <button onclick="stop()">⏹ Stop</button>
@@ -47,65 +47,74 @@ footer{text-align:center;padding:10px;opacity:.5}
 <div id="roll"></div>
 </div>
 
-<footer>FLM Engine • Repair • Studio • Offline</footer>
+<footer>FLM Parser • Repair • Studio • Offline</footer>
 
 <script>
-/* ================= CONFIG ================= */
+/* ===================== CONFIG ===================== */
 const STEPS = 64;
 let tracks = [];
 let ctx, timer, step = 0, playing = false;
 
-/* ================= AUDIO ================= */
-function audio(){ if(!ctx) ctx=new AudioContext(); }
-function freq(n){ return 440*Math.pow(2,(n-69)/12); }
+/* ===================== AUDIO ===================== */
+function audio(){ if(!ctx) ctx = new AudioContext(); }
+function freq(n){ return 440 * Math.pow(2,(n-69)/12); }
 function playNote(note){
   audio();
-  const o=ctx.createOscillator(), g=ctx.createGain();
-  o.type="sawtooth"; o.frequency.value=freq(note);
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type="triangle"; o.frequency.value=freq(note);
   o.connect(g); g.connect(ctx.destination);
-  g.gain.value=0.2;
+  g.gain.value=0.25;
   o.start(); o.stop(ctx.currentTime+0.12);
 }
 
-/* ================= LOAD ================= */
-function load(){
-  const f=file.files[0];
-  if(!f) return alert("Selecione um arquivo");
-  const r=new FileReader();
-  r.onload=e=>{
-    const data=new Uint8Array(e.target.result);
+/* ===================== LOAD ===================== */
+function loadFile(){
+  const f = file.files[0];
+  if(!f) return alert("Selecione um FLM ou FLP");
+  const r = new FileReader();
+  r.onload = e => {
+    const data = new Uint8Array(e.target.result);
     tracks=[];
-    f.name.endsWith(".flm") ? parseFLM(data) : fromFLP(data);
+    if(f.name.endsWith(".flm")) parseRealFLM(data);
+    else fromFLP(data);
     buildRoll();
-    log(`Arquivo: ${f.name}\nTracks: ${tracks.length}\nSteps: ${STEPS}`);
+    log(`Arquivo: ${f.name}\nTracks: ${tracks.length}\nModo: ${f.name.endsWith(".flm")?"FLM real":"FLP simulado"}`);
   };
   r.readAsArrayBuffer(f);
 }
 
-/* ================= FLM PARSER ================= */
-function parseFLM(data){
-  let p=4;
-  while(p<data.length){
-    const count=data[p++]||8;
-    const notes=[];
-    for(let i=0;i<STEPS;i++) notes.push(i<count);
-    tracks.push({notes});
-    p+=count;
+/* ===================== REAL FLM PARSER ===================== */
+function parseRealFLM(data){
+  const sig = String.fromCharCode(data[0],data[1],data[2]);
+  if(sig!=="FLM"){ alert("FLM inválido"); return; }
+
+  let ptr = 4;
+  let currentTrack = {notes:Array(STEPS).fill(false)};
+  tracks.push(currentTrack);
+
+  while(ptr < data.length){
+    const event = data[ptr++];
+    if(event === 0xFF){ // novo track (heurística)
+      currentTrack = {notes:Array(STEPS).fill(false)};
+      tracks.push(currentTrack);
+    }else{
+      const stepIndex = event % STEPS;
+      currentTrack.notes[stepIndex] = true;
+    }
   }
 }
 
-/* ================= FLP SIM ================= */
+/* ===================== FLP SIM ===================== */
 function fromFLP(data){
-  const t=Math.min(8,Math.max(4,data.length%9+4));
+  const t = Math.min(10, Math.max(4, data.length % 8 + 4));
   for(let i=0;i<t;i++){
     const notes=[];
-    for(let s=0;s<STEPS;s++)
-      notes.push(Math.random()>0.7);
+    for(let s=0;s<STEPS;s++) notes.push(Math.random()>0.72);
     tracks.push({notes});
   }
 }
 
-/* ================= UI ================= */
+/* ===================== UI ===================== */
 function buildRoll(){
   roll.innerHTML="";
   tracks.forEach((t,ti)=>{
@@ -121,7 +130,7 @@ function buildRoll(){
   });
 }
 
-/* ================= PLAY ================= */
+/* ===================== PLAY ===================== */
 function play(){
   if(playing) return;
   playing=true; step=0;
@@ -135,22 +144,23 @@ function play(){
 }
 function stop(){ playing=false; clearInterval(timer); }
 
-/* ================= EXPORT ================= */
+/* ===================== EXPORT FLM ===================== */
 function exportFLM(){
-  const out=[0x46,0x4C,0x4D,0x03];
+  const out=[0x46,0x4C,0x4D,0x04];
   tracks.forEach(t=>{
-    const act=t.notes.filter(n=>n);
-    out.push(act.length);
-    act.forEach((_,i)=>out.push(48+(i%12)));
+    t.notes.forEach((n,i)=>{
+      if(n) out.push(i);
+    });
+    out.push(0xFF);
   });
   const blob=new Blob([new Uint8Array(out)],{type:"application/octet-stream"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="output.flm";
+  a.download="final.flm";
   a.click();
 }
 
-/* ================= LOG ================= */
+/* ===================== LOG ===================== */
 function log(t){document.getElementById("log").textContent=t;}
 </script>
 
