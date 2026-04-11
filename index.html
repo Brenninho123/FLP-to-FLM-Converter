@@ -1,168 +1,957 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>FLM Engine – Importador Real</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-*{box-sizing:border-box;font-family:Segoe UI,Arial}
-body{margin:0;background:#020617;color:#e5e7eb}
-header{text-align:center;padding:20px;font-size:2.4em;color:#38bdf8}
-.panel,.controls{
-  width:95%;max-width:1500px;margin:10px auto;
-  background:#020617;border-radius:18px;padding:15px;border:1px solid #0f172a
-}
-.controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
-button,input{
-  padding:12px 16px;border-radius:10px;border:none;font-size:15px
-}
-button{background:#38bdf8;font-weight:bold;cursor:pointer}
-button:hover{background:#0ea5e9}
-#roll{overflow-x:auto;margin-top:10px}
-.track{display:flex;margin-bottom:4px}
-.cell{
-  width:16px;height:26px;margin:1px;border-radius:4px;
-  background:#1f2937;cursor:pointer
-}
-.cell.on{background:#38bdf8;box-shadow:0 0 6px #38bdf8}
-pre{white-space:pre-wrap;font-family:monospace}
-footer{text-align:center;padding:10px;opacity:.5}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLP → FLM Converter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #04040A;
+      --surface:  #0B0B16;
+      --surface2: #12121F;
+      --surface3: #18182A;
+      --border:   #1E1E32;
+      --border2:  #2A2A42;
+      --accent:   #FF7A00;
+      --accent2:  #FF4500;
+      --glow:     rgba(255,122,0,0.15);
+      --success:  #00D97E;
+      --error:    #FF3B5C;
+      --info:     #4FA3FF;
+      --text:     #E2E2F0;
+      --muted:    #484870;
+      --dim:      #2A2A48;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 36px 20px 60px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glow */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px; left: 50%;
+      transform: translateX(-50%);
+      width: 700px; height: 400px;
+      background: radial-gradient(ellipse, rgba(255,100,0,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+      pointer-events: none; z-index: 0; opacity: 0.6;
+    }
+
+    .container { width: 100%; max-width: 580px; position: relative; z-index: 1; }
+
+    /* ── HEADER ── */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+      animation: fadeDown 0.6s ease both;
+    }
+    .logo-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 999px; padding: 6px 16px 6px 10px;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      color: var(--accent); letter-spacing: 0.5px;
+      margin-bottom: 18px;
+    }
+    .logo-dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 6vw, 2.8rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 10px;
+      background: linear-gradient(140deg, #FFB547 0%, var(--accent) 40%, var(--accent2) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-sub {
+      color: var(--muted); font-size: 0.92rem; font-weight: 300;
+      letter-spacing: 0.2px;
+    }
+
+    /* ── DROP ZONE ── */
+    .drop-zone {
+      border: 1.5px dashed var(--border2);
+      border-radius: 20px;
+      padding: 52px 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+      background: var(--surface);
+      position: relative;
+      margin-bottom: 0;
+      animation: fadeUp 0.5s ease 0.1s both;
+    }
+    .drop-zone:hover, .drop-zone.over {
+      border-color: var(--accent);
+      background: #120C00;
+      box-shadow: 0 0 40px var(--glow), inset 0 0 40px rgba(255,122,0,0.03);
+    }
+    .drop-zone input[type=file] {
+      position: absolute; inset: 0; opacity: 0;
+      cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon {
+      font-size: 2.8rem; margin-bottom: 14px;
+      filter: drop-shadow(0 0 12px rgba(255,122,0,0.4));
+      display: block;
+    }
+    .drop-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--text); margin-bottom: 6px;
+    }
+    .drop-sub { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+    .drop-formats {
+      display: inline-flex; gap: 6px; margin-top: 14px;
+    }
+    .fmt-tag {
+      background: var(--surface3); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 10px;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      color: var(--accent);
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      animation: fadeUp 0.4s ease both;
+    }
+    .panel-header {
+      padding: 13px 20px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem; color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    .panel-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 6px var(--accent);
+    }
+    .panel-body { padding: 20px; }
+
+    /* Info grid */
+    .info-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 10px; margin-bottom: 18px;
+    }
+    @media (max-width: 440px) { .info-grid { grid-template-columns: repeat(2, 1fr); } }
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      transition: border-color 0.2s;
+    }
+    .info-card:hover { border-color: var(--border2); }
+    .info-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .info-value {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.3rem; font-weight: 700;
+      color: var(--accent); line-height: 1;
+    }
+    .info-unit { font-size: 0.6em; color: var(--muted); font-family: 'DM Sans', sans-serif; font-weight: 300; }
+
+    /* Section */
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1px;
+      margin: 16px 0 8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* Tags */
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 5px 11px;
+      font-size: 0.8rem; color: #9090C0;
+      display: flex; align-items: center; gap: 6px;
+      transition: border-color 0.15s;
+    }
+    .tag:hover { border-color: var(--border2); color: var(--text); }
+    .tag.muted { opacity: 0.4; text-decoration: line-through; }
+    .tag-count {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem; color: var(--accent); font-weight: 600;
+    }
+
+    /* Piano roll mini-viz */
+    .piano-roll {
+      height: 40px; border-radius: 8px; overflow: hidden;
+      background: var(--surface2); border: 1px solid var(--border);
+      position: relative; margin-top: 6px;
+    }
+    .piano-roll canvas { width: 100%; height: 100%; display: block; }
+
+    /* Stat row */
+    .stat-row {
+      display: flex; gap: 20px; flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .stat { font-size: 0.83rem; color: var(--muted); }
+    .stat strong { color: var(--text); font-weight: 500; }
+
+    /* Warnings */
+    .warning-box {
+      background: #140A00; border: 1px solid #3A2000;
+      border-radius: 10px; padding: 10px 14px;
+      font-size: 0.8rem; color: #CC7700;
+      margin-top: 10px; line-height: 1.4;
+    }
+
+    /* ── PROGRESS ── */
+    .progress-wrap {
+      margin-top: 14px;
+      animation: fadeUp 0.3s ease both;
+    }
+    .progress-header {
+      display: flex; justify-content: space-between;
+      margin-bottom: 7px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem; color: var(--muted);
+    }
+    .progress-bar {
+      height: 3px; background: var(--surface2);
+      border-radius: 3px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent), #FFD000);
+      border-radius: 3px;
+      transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+      width: 0%;
+      position: relative;
+    }
+    .progress-fill::after {
+      content: '';
+      position: absolute; right: 0; top: -3px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* ── STATUS ── */
+    .status {
+      margin-top: 12px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.85rem; line-height: 1.4;
+      display: none;
+    }
+    .status.success { background:#001A0E; border:1px solid #004A28; color:var(--success); display:block; }
+    .status.error   { background:#1A0008; border:1px solid #4A001A; color:var(--error);   display:block; }
+    .status.info    { background:#00081A; border:1px solid #002A4A; color:var(--info);    display:block; }
+
+    /* ── CONVERT BUTTON ── */
+    .convert-btn {
+      width: 100%; margin-top: 14px; padding: 16px;
+      background: linear-gradient(135deg, var(--accent2) 0%, var(--accent) 60%, #FFAA00 100%);
+      color: #fff; border: none; border-radius: 14px;
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.3px;
+      position: relative; overflow: hidden;
+      transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(255,122,0,0.25);
+      animation: fadeUp 0.4s ease both;
+    }
+    .convert-btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+    }
+    .convert-btn:hover { box-shadow: 0 6px 28px rgba(255,122,0,0.4); opacity: 0.95; }
+    .convert-btn:active { transform: scale(0.98); }
+    .convert-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+
+    /* ── FOOTER ── */
+    footer {
+      margin-top: 48px; text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem; color: var(--dim);
+      line-height: 2; position: relative; z-index: 1;
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeDown { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:none; } }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(14px);  } to { opacity:1; transform:none; } }
+    @keyframes pulse    { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+
+    .hidden { display: none !important; }
+  </style>
 </head>
 <body>
+<div class="container">
 
-<header>FLM ENGINE – IMPORTADOR REAL</header>
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo-badge"><div class="logo-dot"></div> BEST-EFFORT CONVERTER</div>
+    <h1>FLP → FLM</h1>
+    <p class="header-sub">FL Studio Desktop projects → FL Studio Mobile · Full binary detection</p>
+  </div>
 
-<div class="controls">
-  <input type="file" id="file" accept=".flm,.flp">
-  <button onclick="loadFile()">Importar</button>
-  <label>BPM <input type="number" id="bpm" value="120" style="width:70px"></label>
-  <button onclick="play()">▶ Play</button>
-  <button onclick="stop()">⏹ Stop</button>
-  <button onclick="exportFLM()">Exportar FLM</button>
+  <!-- DROP ZONE -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".flp">
+    <span class="drop-icon">🎹</span>
+    <div class="drop-title">Drop your .flp file here</div>
+    <div class="drop-sub">or click to browse files</div>
+    <div class="drop-formats">
+      <span class="fmt-tag">FL Studio 11</span>
+      <span class="fmt-tag">FL Studio 12</span>
+      <span class="fmt-tag">FL Studio 20</span>
+      <span class="fmt-tag">FL Studio 21</span>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="progress-wrap hidden" id="progressWrap">
+    <div class="progress-header">
+      <span id="progressLabel">Reading…</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status" id="status"></div>
+
+  <!-- DETECTION PANEL -->
+  <div class="panel hidden" id="detPanel">
+    <div class="panel-header"><div class="panel-dot"></div> DETECTED PROJECT DATA</div>
+    <div class="panel-body" id="detBody"></div>
+  </div>
+
+  <!-- CONVERT BUTTON -->
+  <button class="convert-btn hidden" id="convertBtn">⬇ Convert &amp; Download .flm</button>
+
+  <footer>
+    FLP → FLM Converter · Apache 2.0 · github.com/Brenninho123/FLP-to-FLM-Converter<br>
+    Best-effort binary parser · Plugin samples not included · Manual tuning may be needed
+  </footer>
 </div>
-
-<div class="panel">
-<pre id="log">Aguardando arquivo…</pre>
-<div id="roll"></div>
-</div>
-
-<footer>FLM Parser • Repair • Studio • Offline</footer>
 
 <script>
-/* ===================== CONFIG ===================== */
-const STEPS = 64;
-let tracks = [];
-let ctx, timer, step = 0, playing = false;
+// ═══════════════════════════════════════════════════════════════════
+//  FLP EVENT IDs
+// ═══════════════════════════════════════════════════════════════════
+const EV = {
+  // Byte events (0–63)
+  ENABLED:      0,
+  VOL:          2,
+  PAN:          3,
+  MUTED:        7,
+  CHAN_TYPE:   11,
 
-/* ===================== AUDIO ===================== */
-function audio(){ if(!ctx) ctx = new AudioContext(); }
-function freq(n){ return 440 * Math.pow(2,(n-69)/12); }
-function playNote(note){
-  audio();
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.type="triangle"; o.frequency.value=freq(note);
-  o.connect(g); g.connect(ctx.destination);
-  g.gain.value=0.25;
-  o.start(); o.stop(ctx.currentTime+0.12);
-}
+  // Word events (64–127)
+  TEMPO_OLD:   64,   // BPM as integer (older FL)
+  CUR_PATTERN: 65,   // which pattern is being described
+  MAIN_VOL:    66,
+  MAIN_PITCH:  67,
+  TIMESIG_NUM: 73,
+  TIMESIG_DEN: 74,
 
-/* ===================== LOAD ===================== */
-function loadFile(){
-  const f = file.files[0];
-  if(!f) return alert("Selecione um FLM ou FLP");
-  const r = new FileReader();
-  r.onload = e => {
-    const data = new Uint8Array(e.target.result);
-    tracks=[];
-    if(f.name.endsWith(".flm")) parseRealFLM(data);
-    else fromFLP(data);
-    buildRoll();
-    log(`Arquivo: ${f.name}\nTracks: ${tracks.length}\nModo: ${f.name.endsWith(".flm")?"FLM real":"FLP simulado"}`);
-  };
-  r.readAsArrayBuffer(f);
-}
+  // DWord events (128–191)
+  COLOR:      128,
+  TEMPO_NEW:  133,   // BPM * 1000 (newer FL)
 
-/* ===================== REAL FLM PARSER ===================== */
-function parseRealFLM(data){
-  const sig = String.fromCharCode(data[0],data[1],data[2]);
-  if(sig!=="FLM"){ alert("FLM inválido"); return; }
+  // Data events (192–255)
+  CHAN_NAME:  192,   // 0xC0 — starts a new channel block
+  PAT_NAME:   193,   // 0xC1
+  TITLE:      199,   // 0xC7
+  COMMENT:    200,   // 0xC8
+  AUTHOR:     201,   // 0xC9
+  VERSION:    203,   // 0xCB
+  GENRE:      209,   // 0xD1
+  PAT_NOTES:  224,   // 0xE0 — raw note binary data
+};
 
-  let ptr = 4;
-  let currentTrack = {notes:Array(STEPS).fill(false)};
-  tracks.push(currentTrack);
+// ═══════════════════════════════════════════════════════════════════
+//  FLP PARSER
+// ═══════════════════════════════════════════════════════════════════
+class FLPParser {
+  constructor(buf) {
+    this.buf = buf;
+    this.dv  = new DataView(buf);
+    this.pos = 0;
+    this.proj = {
+      version: '', title: 'Untitled', author: '', genre: '', comment: '',
+      ppq: 96, tempo: 140, timeSigNum: 4, timeSigDen: 4,
+      mainVolume: 100, mainPitch: 0, format: 0,
+      channels: [], patterns: [], warnings: []
+    };
+    this.curCh  = null;
+    this.curPat = null;
+  }
 
-  while(ptr < data.length){
-    const event = data[ptr++];
-    if(event === 0xFF){ // novo track (heurística)
-      currentTrack = {notes:Array(STEPS).fill(false)};
-      tracks.push(currentTrack);
-    }else{
-      const stepIndex = event % STEPS;
-      currentTrack.notes[stepIndex] = true;
+  // ── Low-level readers ──
+  u8()  { return this.dv.getUint8(this.pos++); }
+  u16() { const v = this.dv.getUint16(this.pos, true); this.pos += 2; return v; }
+  u32() { const v = this.dv.getUint32(this.pos, true); this.pos += 4; return v; }
+
+  magic() {
+    return String.fromCharCode(this.u8(), this.u8(), this.u8(), this.u8());
+  }
+
+  varLen() {
+    let n = 0, shift = 0, b;
+    do { b = this.u8(); n |= (b & 0x7F) << shift; shift += 7; } while (b & 0x80);
+    return n;
+  }
+
+  // Smart text decoder: tries UTF-16LE (newer FL) → UTF-8 → Latin-1
+  decode(bytes) {
+    if (bytes.length >= 2 && bytes[1] === 0) {
+      try {
+        const s = new TextDecoder('utf-16le').decode(bytes);
+        return s.replace(/\0/g, '').trim();
+      } catch {}
+    }
+    try { return new TextDecoder('utf-8').decode(bytes).replace(/\0/g, '').trim(); } catch {}
+    return new TextDecoder('latin1').decode(bytes).replace(/\0/g, '').trim();
+  }
+
+  // ── Main parse ──
+  parse() {
+    const m1 = this.magic();
+    if (m1 !== 'FLhd') throw new Error(`Not a valid .flp file — got magic "${m1}"`);
+    this.u32(); // header length (always 6)
+    this.proj.format      = this.u16();
+    this.proj.numChannels = this.u16();
+    this.proj.ppq         = this.u16();
+
+    const m2 = this.magic();
+    if (m2 !== 'FLdt') throw new Error(`Expected FLdt chunk — got "${m2}"`);
+    const dlen = this.u32();
+    const end  = this.pos + dlen;
+
+    let safety = 0;
+    while (this.pos < end && this.pos < this.buf.byteLength - 1 && ++safety < 2000000) {
+      try { this.parseEvent(); } catch (e) {
+        this.proj.warnings.push(`Parse stopped at offset ${this.pos}: ${e.message}`);
+        break;
+      }
+    }
+    return this.proj;
+  }
+
+  parseEvent() {
+    const id = this.u8();
+
+    if (id < 64) {
+      // BYTE — 1 byte data
+      this.onByte(id, this.u8());
+    } else if (id < 128) {
+      // WORD — 2 bytes data
+      this.onWord(id, this.u16());
+    } else if (id < 192) {
+      // DWORD — 4 bytes data
+      this.onDWord(id, this.u32());
+    } else {
+      // VARIABLE LENGTH — length prefix + data
+      const len   = this.varLen();
+      const start = this.pos;
+      const safe  = Math.min(len, this.buf.byteLength - this.pos);
+      const bytes = new Uint8Array(this.buf, this.pos, safe);
+      this.onData(id, bytes, len);
+      this.pos = start + len; // always advance by declared length
+    }
+  }
+
+  // ── Event handlers ──
+  onByte(id, v) {
+    const ch = this.curCh;
+    if (!ch) return;
+    switch (id) {
+      case EV.ENABLED:   ch.enabled  = v !== 0;    break;
+      case EV.VOL:       ch.volume   = v;           break;
+      case EV.PAN:       ch.pan      = v - 64;      break; // 64 = center
+      case EV.MUTED:     ch.muted    = v === 0;     break;
+      case EV.CHAN_TYPE:  ch.type    = v;            break;
+    }
+  }
+
+  onWord(id, v) {
+    switch (id) {
+      case EV.TEMPO_OLD:    if (v > 0) this.proj.tempo = v;    break;
+      case EV.CUR_PATTERN:  this.switchPattern(v);              break;
+      case EV.MAIN_VOL:     this.proj.mainVolume = v;           break;
+      case EV.MAIN_PITCH:   this.proj.mainPitch  = v;           break;
+      case EV.TIMESIG_NUM:  this.proj.timeSigNum = v || 4;      break;
+      case EV.TIMESIG_DEN:  this.proj.timeSigDen = v || 4;      break;
+    }
+  }
+
+  onDWord(id, v) {
+    switch (id) {
+      case EV.COLOR:
+        if (this.curCh)  this.curCh.color  = v;
+        if (this.curPat) this.curPat.color = v;
+        break;
+      case EV.TEMPO_NEW:
+        if (v > 0) this.proj.tempo = v / 1000;
+        break;
+    }
+  }
+
+  onData(id, bytes, len) {
+    switch (id) {
+      case EV.CHAN_NAME: {
+        // Each channel name event marks the start of a new channel block
+        const name = this.decode(bytes) || `Channel ${this.proj.channels.length + 1}`;
+        this.curCh = { name, volume: 100, pan: 0, enabled: true, muted: false, type: 0, color: 0 };
+        this.proj.channels.push(this.curCh);
+        break;
+      }
+      case EV.PAT_NAME: {
+        const name = this.decode(bytes);
+        if (this.curPat && name) this.curPat.name = name;
+        break;
+      }
+      case EV.TITLE:   { const s = this.decode(bytes); if (s) this.proj.title   = s; break; }
+      case EV.COMMENT:   this.proj.comment = this.decode(bytes);                       break;
+      case EV.AUTHOR:    this.proj.author  = this.decode(bytes);                       break;
+      case EV.VERSION:   this.proj.version = this.decode(bytes);                       break;
+      case EV.GENRE:     this.proj.genre   = this.decode(bytes);                       break;
+      case EV.PAT_NOTES: this.parseNotes(bytes, len);                                  break;
+    }
+  }
+
+  switchPattern(idx) {
+    while (this.proj.patterns.length <= idx)
+      this.proj.patterns.push({
+        name: `Pattern ${this.proj.patterns.length + 1}`,
+        notes: [], color: 0
+      });
+    this.curPat = this.proj.patterns[idx];
+  }
+
+  // ── Note binary decoder ──
+  // FL Studio stores notes as packed structs; size varies by version.
+  // We auto-detect 20 vs 24 vs 16 bytes per note.
+  parseNotes(bytes, len) {
+    if (!this.curPat || len < 16) return;
+
+    // Detect note struct size by divisibility (prefer 20 for FL 12-20, 24 for FL 21+)
+    let ns = 20;
+    if      (len % 24 === 0) ns = 24;
+    else if (len % 20 === 0) ns = 20;
+    else if (len % 16 === 0) ns = 16;
+    else return; // can't determine layout
+
+    const count = Math.floor(len / ns);
+    for (let i = 0; i < count; i++) {
+      const o  = i * ns;
+      if (o + ns > bytes.length) break;
+      const dv = new DataView(bytes.buffer, bytes.byteOffset + o, ns);
+
+      // Position: always uint32 at offset 0
+      const pos = dv.getUint32(0, true);
+
+      // Duration: uint32 for 20/24-byte notes, uint16 for 16-byte
+      const dur = ns >= 20 ? dv.getUint32(4, true) : dv.getUint16(4, true);
+
+      // Key & channel depend on layout
+      const keyOff = ns >= 20 ? 8 : 6;
+      const chOff  = ns >= 20 ? 9 : 7;
+      const velOff = ns >= 20 ? 10 : 8;
+
+      const key = dv.getUint8(keyOff);
+      const ch  = dv.getUint8(chOff);
+      const vel = dv.getUint8(velOff);
+
+      // Sanity filter
+      if (key > 131 || vel > 127) continue;
+
+      this.curPat.notes.push({
+        pos, dur,
+        key: Math.max(0, Math.min(131, key)),
+        ch,
+        vel: Math.max(1, Math.min(127, vel || 100))
+      });
     }
   }
 }
 
-/* ===================== FLP SIM ===================== */
-function fromFLP(data){
-  const t = Math.min(10, Math.max(4, data.length % 8 + 4));
-  for(let i=0;i<t;i++){
-    const notes=[];
-    for(let s=0;s<STEPS;s++) notes.push(Math.random()>0.72);
-    tracks.push({notes});
+// ═══════════════════════════════════════════════════════════════════
+//  FLM GENERATOR  (ZIP + project.xml + README.txt)
+// ═══════════════════════════════════════════════════════════════════
+function esc(s) {
+  return (s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function colorHex(n) {
+  return '#' + ((n || 0) & 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase();
+}
+// FL key 60 = C5 in FL UI; keep same value for MIDI mapping
+function flKeyToName(k) {
+  const N = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  return N[k % 12] + (Math.floor(k / 12) - 1);
+}
+
+async function generateFLM(proj) {
+  const zip = new JSZip();
+  const bpm = Math.round(proj.tempo * 1000) / 1000;
+  const activePats = proj.patterns.filter(p => p.notes.length > 0);
+  const totalNotes = activePats.reduce((s, p) => s + p.notes.length, 0);
+
+  // ── project.xml ──
+  const X = [];
+  X.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+  X.push(`<!-- FL Studio → FL Studio Mobile Conversion`);
+  X.push(`     Source: FL Studio ${proj.version || '?'}`);
+  X.push(`     Channels: ${proj.channels.length} | Patterns: ${activePats.length} | Notes: ${totalNotes} -->`);
+  X.push(`<FLMobileProject`);
+  X.push(`  version="2.0"`);
+  X.push(`  tempo="${bpm}"`);
+  X.push(`  swing="0"`);
+  X.push(`  timeSigNumerator="${proj.timeSigNum}"`);
+  X.push(`  timeSigDenominator="${proj.timeSigDen}"`);
+  X.push(`  ppq="${proj.ppq}"`);
+  X.push(`  mainVolume="${proj.mainVolume}"`);
+  X.push(`  mainPitch="${proj.mainPitch}">`);
+
+  X.push(`  <info`);
+  X.push(`    title="${esc(proj.title)}"`);
+  X.push(`    author="${esc(proj.author)}"`);
+  X.push(`    genre="${esc(proj.genre)}"`);
+  X.push(`    comment="${esc(proj.comment)}"/>`);
+
+  X.push(`  <channels count="${proj.channels.length}">`);
+  proj.channels.forEach((ch, i) => {
+    X.push(`    <channel`);
+    X.push(`      index="${i}"`);
+    X.push(`      name="${esc(ch.name)}"`);
+    X.push(`      type="${ch.type}"`);
+    X.push(`      volume="${ch.volume}"`);
+    X.push(`      pan="${ch.pan + 64}"`);
+    X.push(`      muted="${ch.muted}"`);
+    X.push(`      color="${colorHex(ch.color)}"/>`);
+  });
+  X.push(`  </channels>`);
+
+  X.push(`  <patterns count="${activePats.length}">`);
+  activePats.forEach((pat, pi) => {
+    X.push(`    <pattern index="${pi}" name="${esc(pat.name)}" color="${colorHex(pat.color)}" notes="${pat.notes.length}">`);
+    pat.notes.forEach(n => {
+      X.push(`      <note position="${n.pos}" length="${n.dur}" key="${n.key}" channel="${n.ch}" velocity="${n.vel}"/>`);
+    });
+    X.push(`    </pattern>`);
+  });
+  X.push(`  </patterns>`);
+  X.push(`</FLMobileProject>`);
+
+  zip.file('project.xml', X.join('\n'));
+
+  // ── README.txt ──
+  const R = [
+    '╔══════════════════════════════════════╗',
+    '║   FLP → FLM Conversion Report        ║',
+    '╚══════════════════════════════════════╝',
+    '',
+    `Title    : ${proj.title}`,
+    `Author   : ${proj.author || 'N/A'}`,
+    `Genre    : ${proj.genre  || 'N/A'}`,
+    `FL Ver.  : ${proj.version || 'Unknown'}`,
+    '',
+    '── Project Settings ─────────────────',
+    `Tempo    : ${bpm} BPM`,
+    `Time Sig : ${proj.timeSigNum}/${proj.timeSigDen}`,
+    `PPQ      : ${proj.ppq}`,
+    `Volume   : ${proj.mainVolume}`,
+    '',
+    '── Converted Content ────────────────',
+    `Channels : ${proj.channels.length}`,
+    `Patterns : ${activePats.length} (with notes)`,
+    `Notes    : ${totalNotes}`,
+    '',
+    proj.channels.map((ch, i) =>
+      `  Ch ${String(i+1).padStart(2,'0')}: ${ch.name}${ch.muted ? ' [MUTED]' : ''}`
+    ).join('\n'),
+    '',
+    '── Notes ────────────────────────────',
+    '• Plugin instruments are listed by name only.',
+    '  You must reassign samples manually in FL Studio Mobile.',
+    '• Automation clips, mixer effects, and send tracks',
+    '  are not included in this conversion.',
+    '• Pitch fine-tuning and modulation X/Y are omitted.',
+    '• Note parsing is best-effort; verify playback.',
+    '',
+    '── How to Open ──────────────────────',
+    '1. Transfer the .flm file to your device.',
+    '2. Open FL Studio Mobile.',
+    '3. Tap the folder icon → Import → Select this file.',
+    '',
+    'Converted with FLP→FLM Converter (Apache 2.0)',
+    'github.com/Brenninho123/FLP-to-FLM-Converter',
+  ];
+  zip.file('README.txt', R.join('\n'));
+
+  return zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════════════════════════════════
+let project = null;
+
+const $  = id => document.getElementById(id);
+const dz = $('dropZone'), fi = $('fileInput'),
+      pw = $('progressWrap'), pf = $('progressFill'), pl = $('progressLabel'), pp = $('progressPct'),
+      st = $('status'), dp = $('detPanel'), db = $('detBody'), cb = $('convertBtn');
+
+// Drag & drop
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fi.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+// Convert button
+cb.addEventListener('click', async () => {
+  if (!project) return;
+  cb.disabled = true;
+  setStatus('info', '⚙️ Building .flm archive…');
+  try {
+    const blob = await generateFLM(project);
+    const safe = (project.title || 'project').replace(/[^\w\s\-]/g, '_').trim() || 'project';
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: safe + '.flm' });
+    a.click(); URL.revokeObjectURL(url);
+    setStatus('success', `✅ "${safe}.flm" downloaded — import it in FL Studio Mobile.`);
+  } catch (e) {
+    setStatus('error', '❌ Failed to generate file: ' + e.message);
+  }
+  cb.disabled = false;
+});
+
+function handleFile(file) {
+  if (!file.name.toLowerCase().endsWith('.flp')) {
+    setStatus('error', '❌ Not a .flp file. Please select a valid FL Studio project.'); return;
+  }
+  setStatus('info', `📂 Loading "${file.name}" — ${(file.size/1024).toFixed(1)} KB`);
+  pw.classList.remove('hidden');
+  setProgress(10, 'Reading binary…');
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    setProgress(45, 'Parsing FLP events…');
+    try {
+      const parser = new FLPParser(e.target.result);
+      setProgress(70, 'Detecting channels & notes…');
+      project = parser.parse();
+      setProgress(90, 'Rendering report…');
+      renderReport(project, file.name);
+      setProgress(100, 'Complete');
+      const chs  = project.channels.length;
+      const pats = project.patterns.filter(p => p.notes.length > 0).length;
+      const ntot = project.patterns.reduce((s, p) => s + p.notes.length, 0);
+      setStatus('success',
+        `✅ Parsed "${file.name}" — ${chs} channel${chs!==1?'s':''}, ${pats} pattern${pats!==1?'s':''} with notes, ${ntot.toLocaleString()} total notes.`
+      );
+      cb.classList.remove('hidden');
+    } catch (err) {
+      setStatus('error', '❌ ' + err.message);
+      pw.classList.add('hidden');
+    }
+  };
+  reader.onerror = () => setStatus('error', '❌ Failed to read the file.');
+  reader.readAsArrayBuffer(file);
+}
+
+function setProgress(pct, label) {
+  pf.style.width = pct + '%';
+  pl.textContent = label;
+  pp.textContent = pct + '%';
+}
+function setStatus(type, msg) { st.className = 'status ' + type; st.textContent = msg; }
+
+// ── Detection report renderer ──
+function renderReport(p, filename) {
+  const activePats = p.patterns.filter(pt => pt.notes.length > 0);
+  const allNotes   = activePats.flatMap(pt => pt.notes);
+  const totalNotes = allNotes.length;
+  const bpm        = Math.round(p.tempo * 10) / 10;
+
+  let html = '';
+
+  // ── Info grid
+  html += `<div class="info-grid">
+    <div class="info-card">
+      <div class="info-label">Tempo</div>
+      <div class="info-value">${bpm} <span class="info-unit">BPM</span></div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Time Sig</div>
+      <div class="info-value">${p.timeSigNum}<span class="info-unit">/${p.timeSigDen}</span></div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Channels</div>
+      <div class="info-value">${p.channels.length}</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">PPQ</div>
+      <div class="info-value">${p.ppq}</div>
+    </div>
+  </div>`;
+
+  // ── Project metadata
+  const meta = [];
+  if (p.title && p.title !== 'Untitled') meta.push(`📝 ${p.title}`);
+  if (p.author)  meta.push(`👤 ${p.author}`);
+  if (p.genre)   meta.push(`🎸 ${p.genre}`);
+  if (p.version) meta.push(`🔖 FL ${p.version}`);
+  if (meta.length) {
+    html += `<div class="section-label">Project Info</div>
+    <div class="tag-list">${meta.map(m => `<div class="tag">${m}</div>`).join('')}</div>`;
+  }
+
+  // ── Channel list
+  if (p.channels.length > 0) {
+    html += `<div class="section-label">Channels (${p.channels.length})</div>
+    <div class="tag-list">`;
+    p.channels.forEach(ch => {
+      const icon = ch.muted ? '🔇' : (ch.type === 0 ? '🎹' : ch.type === 1 ? '🥁' : '🎛️');
+      html += `<div class="tag ${ch.muted ? 'muted' : ''}">${icon} ${ch.name}</div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── Patterns
+  if (activePats.length > 0) {
+    html += `<div class="section-label">Patterns with Notes (${activePats.length})</div>
+    <div class="tag-list">`;
+    activePats.forEach(pt => {
+      html += `<div class="tag">🎼 ${pt.name} <span class="tag-count">${pt.notes.length}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── Piano roll mini-viz + stats
+  if (totalNotes > 0) {
+    const keys = allNotes.map(n => n.key);
+    const minK = Math.min(...keys), maxK = Math.max(...keys);
+
+    html += `<div class="section-label">Note Range</div>`;
+    html += `<div class="piano-roll"><canvas id="rollCanvas"></canvas></div>`;
+    html += `<div class="stat-row" style="margin-top:10px">
+      <div class="stat">Total: <strong>${totalNotes.toLocaleString()}</strong></div>
+      <div class="stat">Range: <strong>${flKeyToName(minK)}</strong> – <strong>${flKeyToName(maxK)}</strong></div>
+      <div class="stat">Patterns: <strong>${activePats.length}</strong></div>
+    </div>`;
+  }
+
+  // ── Warnings
+  if (p.warnings.length) {
+    html += p.warnings.map(w => `<div class="warning-box">⚠️ ${w}</div>`).join('');
+  }
+
+  db.innerHTML = html;
+  dp.classList.remove('hidden');
+
+  // Draw mini piano-roll after DOM updates
+  if (totalNotes > 0) {
+    requestAnimationFrame(() => drawRoll(project));
   }
 }
 
-/* ===================== UI ===================== */
-function buildRoll(){
-  roll.innerHTML="";
-  tracks.forEach((t,ti)=>{
-    const row=document.createElement("div");
-    row.className="track";
-    t.notes.forEach((n,i)=>{
-      const c=document.createElement("div");
-      c.className="cell"+(n?" on":"");
-      c.onclick=()=>{t.notes[i]=!t.notes[i];c.classList.toggle("on");};
-      row.appendChild(c);
-    });
-    roll.appendChild(row);
+function drawRoll(p) {
+  const canvas = document.getElementById('rollCanvas');
+  if (!canvas) return;
+  const parent = canvas.parentElement;
+  canvas.width  = parent.clientWidth * devicePixelRatio;
+  canvas.height = parent.clientHeight * devicePixelRatio;
+  canvas.style.width  = parent.clientWidth + 'px';
+  canvas.style.height = parent.clientHeight + 'px';
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Background
+  ctx.fillStyle = '#12121F';
+  ctx.fillRect(0, 0, W, H);
+
+  const activePats = p.patterns.filter(pt => pt.notes.length > 0);
+  const allNotes   = activePats.flatMap(pt => pt.notes);
+  if (!allNotes.length) return;
+
+  const allPos = allNotes.map(n => n.pos);
+  const maxPos = Math.max(...allPos) + Math.max(...allNotes.map(n => n.dur || p.ppq));
+  const allKey = allNotes.map(n => n.key);
+  const minKey = Math.min(...allKey), maxKey = Math.max(...allKey);
+  const keyRange = Math.max(maxKey - minKey, 12);
+
+  // Draw key guide lines (octave separators)
+  ctx.strokeStyle = 'rgba(30,30,50,0.8)';
+  ctx.lineWidth = 1;
+  for (let k = Math.floor(minKey / 12) * 12; k <= maxKey + 12; k += 12) {
+    const y = H - ((k - minKey) / keyRange) * H;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Draw notes
+  allNotes.forEach(n => {
+    const x = (n.pos / maxPos) * W;
+    const w = Math.max(2, (n.dur / maxPos) * W);
+    const y = H - ((n.key - minKey + 1) / (keyRange + 2)) * H;
+    const h = Math.max(2, H / (keyRange + 2));
+
+    const hue = 25 + (n.vel / 127) * 20;
+    const sat = 80 + (n.vel / 127) * 20;
+    const lit = 45 + (n.vel / 127) * 25;
+    ctx.fillStyle = `hsl(${hue},${sat}%,${lit}%)`;
+    ctx.beginPath();
+    ctx.roundRect(x, y - h / 2, w, h, 1);
+    ctx.fill();
   });
 }
-
-/* ===================== PLAY ===================== */
-function play(){
-  if(playing) return;
-  playing=true; step=0;
-  const interval=60000/(+bpm.value*4);
-  timer=setInterval(()=>{
-    tracks.forEach((t,i)=>{
-      if(t.notes[step]) playNote(48+i*5);
-    });
-    step=(step+1)%STEPS;
-  },interval);
-}
-function stop(){ playing=false; clearInterval(timer); }
-
-/* ===================== EXPORT FLM ===================== */
-function exportFLM(){
-  const out=[0x46,0x4C,0x4D,0x04];
-  tracks.forEach(t=>{
-    t.notes.forEach((n,i)=>{
-      if(n) out.push(i);
-    });
-    out.push(0xFF);
-  });
-  const blob=new Blob([new Uint8Array(out)],{type:"application/octet-stream"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="final.flm";
-  a.click();
-}
-
-/* ===================== LOG ===================== */
-function log(t){document.getElementById("log").textContent=t;}
 </script>
-
 </body>
 </html>
