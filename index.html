@@ -226,13 +226,13 @@ h1 {
 .status.error   { background:#1A0008; border:1px solid #4A001A; color:var(--error);   display:block; }
 .status.info    { background:#00081A; border:1px solid #002A4A; color:var(--info);    display:block; }
 
-.btn-row { display: flex; gap: 10px; margin-top: 14px; }
+.btn-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .btn {
-  flex: 1; padding: 16px;
+  flex: 1; min-width: 130px; padding: 15px 12px;
   border: none; border-radius: 14px;
   font-family: 'Syne', sans-serif;
-  font-size: 0.95rem; font-weight: 700;
-  cursor: pointer; letter-spacing: 0.3px;
+  font-size: 0.88rem; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.2px;
   transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
   animation: fadeUp 0.4s ease both;
 }
@@ -303,8 +303,9 @@ footer {
   </div>
 
   <div class="btn-row hidden" id="btnRow">
-    <button class="btn btn-primary" id="convertBtn">⬇ Download .flm</button>
-    <button class="btn btn-secondary" id="jsonBtn">⬇ Analysis (.json)</button>
+    <button class="btn btn-primary" id="midiBtn">⬇ Download .mid</button>
+    <button class="btn btn-secondary" id="convertBtn">⬇ .flm (experimental)</button>
+    <button class="btn btn-secondary" id="jsonBtn">⬇ .json</button>
   </div>
 
   <footer>
@@ -656,6 +657,108 @@ class FLMWriter {
   }
 }
 
+class MidiWriter {
+  constructor(proj) {
+    this.proj = proj;
+  }
+
+  static vlq(n) {
+    n = Math.max(0, Math.floor(n)) >>> 0;
+    const groups = [n & 0x7F];
+    n = Math.floor(n / 128);
+    while (n > 0) { groups.push(n & 0x7F); n = Math.floor(n / 128); }
+    groups.reverse();
+    return groups.map((g, i) => i < groups.length - 1 ? (g | 0x80) : g);
+  }
+
+  static textBytes(str) {
+    const out = [];
+    for (const ch of String(str)) {
+      const code = ch.codePointAt(0);
+      out.push(code <= 255 ? code : 0x3F);
+    }
+    return out;
+  }
+
+  static trackChunk(events) {
+    events.sort((a, b) => (a.tick - b.tick) || (a.priority || 0) - (b.priority || 0));
+    const body = [];
+    let prevTick = 0;
+    for (const ev of events) {
+      const delta = Math.max(0, ev.tick - prevTick);
+      body.push(...MidiWriter.vlq(delta));
+      body.push(...ev.bytes);
+      prevTick = ev.tick;
+    }
+    body.push(0, 0xFF, 0x2F, 0x00);
+    const out = [0x4D,0x54,0x72,0x6B];
+    out.push((body.length>>>24)&0xFF,(body.length>>>16)&0xFF,(body.length>>>8)&0xFF,body.length&0xFF);
+    out.push(...body);
+    return out;
+  }
+
+  build() {
+    const p = this.proj;
+    const ppq = p.ppq || 96;
+    const tracks = [];
+
+    const tempoEvents = [];
+    const usPerBeat = Math.round(60000000 / (p.tempo || 140));
+    tempoEvents.push({ tick: 0, priority: 0, bytes: [0xFF,0x51,0x03, (usPerBeat>>16)&0xFF, (usPerBeat>>8)&0xFF, usPerBeat&0xFF] });
+    const denPow = Math.max(0, Math.round(Math.log2(p.timeSigDen || 4)));
+    tempoEvents.push({ tick: 0, priority: 1, bytes: [0xFF,0x58,0x04, p.timeSigNum || 4, denPow, 24, 8] });
+    const titleBytes = MidiWriter.textBytes(p.title || 'Untitled');
+    tempoEvents.push({ tick: 0, priority: -1, bytes: [0xFF,0x03, ...MidiWriter.vlq(titleBytes.length), ...titleBytes] });
+    tracks.push(MidiWriter.trackChunk(tempoEvents));
+
+    let patternOffset = 0;
+    const patternOffsets = p.patterns.map(pat => {
+      const start = patternOffset;
+      let maxEnd = 0;
+      pat.notes.forEach(n => { maxEnd = Math.max(maxEnd, n.position + n.length); });
+      patternOffset += maxEnd || ppq * 4;
+      return start;
+    });
+
+    const byChannel = new Map();
+    p.patterns.forEach((pat, pi) => {
+      pat.notes.forEach(n => {
+        const idx = Math.min(p.channels.length - 1, Math.max(0, n.channel ?? 0));
+        if (!byChannel.has(idx)) byChannel.set(idx, []);
+        byChannel.get(idx).push({
+          tick: patternOffsets[pi] + n.position,
+          length: Math.max(1, n.length),
+          key: Math.max(0, Math.min(127, n.key)),
+          velocity: Math.max(1, Math.min(127, n.velocity || 100)),
+        });
+      });
+    });
+
+    if (byChannel.size === 0) {
+      tracks.push(MidiWriter.trackChunk([]));
+    }
+
+    for (const [idx, notes] of byChannel.entries()) {
+      const ch = p.channels[idx];
+      const events = [];
+      const nameBytes = MidiWriter.textBytes(ch ? ch.name : `Channel ${idx + 1}`);
+      events.push({ tick: 0, priority: -1, bytes: [0xFF,0x03, ...MidiWriter.vlq(nameBytes.length), ...nameBytes] });
+      const midiCh = idx % 16;
+      notes.forEach(n => {
+        events.push({ tick: n.tick, priority: 1, bytes: [0x90 | midiCh, n.key, n.velocity] });
+        events.push({ tick: n.tick + n.length, priority: 0, bytes: [0x80 | midiCh, n.key, 0] });
+      });
+      tracks.push(MidiWriter.trackChunk(events));
+    }
+
+    const header = [0x4D,0x54,0x68,0x64, 0,0,0,6, 0,1, (tracks.length>>8)&0xFF, tracks.length&0xFF, (ppq>>8)&0xFF, ppq&0xFF];
+    const out = [...header];
+    tracks.forEach(t => out.push(...t));
+    return new Uint8Array(out);
+  }
+}
+
+
 const dropZone     = document.getElementById('dropZone');
 const fileInput    = document.getElementById('fileInput');
 const progressWrap = document.getElementById('progressWrap');
@@ -666,6 +769,7 @@ const statusEl     = document.getElementById('status');
 const detPanel      = document.getElementById('detPanel');
 const detBody       = document.getElementById('detBody');
 const btnRow        = document.getElementById('btnRow');
+const midiBtn       = document.getElementById('midiBtn');
 const convertBtn    = document.getElementById('convertBtn');
 const jsonBtn       = document.getElementById('jsonBtn');
 
@@ -840,7 +944,7 @@ function renderDetection(proj) {
 
   const note = document.createElement('div');
   note.className = 'note-box';
-  note.textContent = 'Image-Line has never published the .flm binary spec, so this writes the song back out using the same FLhd/FLdt event-chunk container FL Studio itself uses for .flp — the same mechanism desktop FL Studio relies on to import .flm directly. It is a well-informed guess, not a confirmed match for FL Studio Mobile\'s own parser.';
+  note.innerHTML = 'FL Studio Mobile has a documented <strong>"Import MIDI Tracks"</strong> feature (drop the .mid file in the My MIDI folder, or use Import) — that is a real, guaranteed-to-open path for notes/tempo/time-sig, so it\'s the recommended download here.<br><br>Image-Line has never published the .flm binary spec, so the .flm button is a research artifact: it writes the project using the same FLhd/FLdt event-chunk container FL Studio itself uses for .flp. It may not be read by FL Studio Mobile\'s own parser at all.';
   detBody.appendChild(note);
 
   detPanel.classList.remove('hidden');
@@ -879,6 +983,19 @@ function drawPianoRoll(pattern) {
   });
   ctx.globalAlpha = 1;
 }
+
+midiBtn.addEventListener('click', () => {
+  if (!currentProj) return;
+  try {
+    const writer = new MidiWriter(currentProj);
+    const bytes = writer.build();
+    const blob = new Blob([bytes], { type: 'audio/midi' });
+    downloadBlob(blob, `${currentFileBase}.mid`);
+    setStatus('success', `Generated ${currentFileBase}.mid (${(bytes.length / 1024).toFixed(1)} KB). Import it via My MIDI / "Import MIDI Tracks" in FL Studio Mobile. Note: pattern arrangement/repeats from the Playlist aren't reconstructed — patterns are stitched back-to-back in pattern order.`);
+  } catch (err) {
+    setStatus('error', `Could not build the .mid file: ${err.message}`);
+  }
+});
 
 convertBtn.addEventListener('click', () => {
   if (!currentProj) return;
