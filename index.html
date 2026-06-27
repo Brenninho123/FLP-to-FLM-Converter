@@ -172,6 +172,23 @@ h1 {
 .channel-name { flex: 1; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .channel-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); display: flex; gap: 8px; flex-shrink: 0; }
 .channel-meta span.off { color: var(--error); }
+.channel-midi-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  color: var(--accent); background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px; cursor: pointer; flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+.channel-midi-btn:hover { border-color: var(--accent); }
+.lab-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.lab-btn {
+  flex: 1; min-width: 150px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 10px 12px; cursor: pointer; text-align: left;
+  transition: border-color 0.15s;
+}
+.lab-btn:hover { border-color: var(--accent); }
+.lab-btn .lab-title { font-family: 'Syne', sans-serif; font-size: 0.82rem; font-weight: 700; color: var(--text); }
+.lab-btn .lab-sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; line-height: 1.3; }
 
 .piano-roll {
   height: 130px; border-radius: 10px; overflow: hidden;
@@ -303,8 +320,7 @@ footer {
   </div>
 
   <div class="btn-row hidden" id="btnRow">
-    <button class="btn btn-primary" id="midiBtn">⬇ Download .mid</button>
-    <button class="btn btn-secondary" id="convertBtn">⬇ .flm (experimental)</button>
+    <button class="btn btn-primary" id="midiBtn">⬇ Download .mid (all)</button>
     <button class="btn btn-secondary" id="jsonBtn">⬇ .json</button>
   </div>
 
@@ -697,7 +713,7 @@ class MidiWriter {
     return out;
   }
 
-  build() {
+  build(onlyChannelIndex = null) {
     const p = this.proj;
     const ppq = p.ppq || 96;
 
@@ -706,7 +722,10 @@ class MidiWriter {
     events.push({ tick: 0, priority: -2, bytes: [0xFF,0x51,0x03, (usPerBeat>>16)&0xFF, (usPerBeat>>8)&0xFF, usPerBeat&0xFF] });
     const denPow = Math.max(0, Math.round(Math.log2(p.timeSigDen || 4)));
     events.push({ tick: 0, priority: -1, bytes: [0xFF,0x58,0x04, p.timeSigNum || 4, denPow, 24, 8] });
-    const titleBytes = MidiWriter.textBytes(p.title || 'Untitled');
+    const titleSrc = onlyChannelIndex !== null && p.channels[onlyChannelIndex]
+      ? p.channels[onlyChannelIndex].name
+      : (p.title || 'Untitled');
+    const titleBytes = MidiWriter.textBytes(titleSrc);
     events.push({ tick: 0, priority: -3, bytes: [0xFF,0x03, ...MidiWriter.vlq(titleBytes.length), ...titleBytes] });
 
     let patternOffset = 0;
@@ -721,7 +740,8 @@ class MidiWriter {
     p.patterns.forEach((pat, pi) => {
       pat.notes.forEach(n => {
         const idx = Math.min(Math.max(0, p.channels.length - 1), Math.max(0, n.channel ?? 0));
-        const midiCh = idx % 16;
+        if (onlyChannelIndex !== null && idx !== onlyChannelIndex) return;
+        const midiCh = onlyChannelIndex !== null ? 0 : idx % 16;
         const tick = patternOffsets[pi] + n.position;
         const length = Math.max(1, n.length);
         const key = Math.max(0, Math.min(127, n.key));
@@ -737,6 +757,30 @@ class MidiWriter {
   }
 }
 
+class FLMWriterJSON {
+  constructor(proj) { this.proj = proj; }
+
+  build() {
+    const p = this.proj;
+    const payload = {
+      title: p.title, author: p.author, genre: p.genre, comment: p.comment,
+      tempo: p.tempo, ppq: p.ppq, timeSigNum: p.timeSigNum, timeSigDen: p.timeSigDen,
+      mainVolume: p.mainVolume, mainPitch: p.mainPitch,
+      channels: p.channels.map(c => ({ name: c.name, volume: c.volume, pan: c.pan, color: c.color, muted: !!c.muted, enabled: c.enabled !== false })),
+      patterns: p.patterns.map(pat => ({
+        name: pat.name, color: pat.color,
+        notes: pat.notes.map(n => ({ position: n.position, length: n.length, key: n.key, velocity: n.velocity, pan: n.pan, channel: n.channel }))
+      })),
+    };
+    const json = JSON.stringify(payload);
+    const jsonBytes = new TextEncoder().encode(json);
+    const tag = [0x46,0x4C,0x4D,0x31];
+    const len = jsonBytes.length;
+    const lenBytes = [(len>>>24)&0xFF,(len>>>16)&0xFF,(len>>>8)&0xFF,len&0xFF];
+    return new Uint8Array([...tag, ...lenBytes, ...jsonBytes]);
+  }
+}
+
 
 const dropZone     = document.getElementById('dropZone');
 const fileInput    = document.getElementById('fileInput');
@@ -749,7 +793,6 @@ const detPanel      = document.getElementById('detPanel');
 const detBody       = document.getElementById('detBody');
 const btnRow        = document.getElementById('btnRow');
 const midiBtn       = document.getElementById('midiBtn');
-const convertBtn    = document.getElementById('convertBtn');
 const jsonBtn       = document.getElementById('jsonBtn');
 
 let currentProj = null;
@@ -874,7 +917,15 @@ function renderDetection(proj) {
         <span>pan ${ch.pan}</span>
         ${ch.muted ? '<span class="off">muted</span>' : ''}
         ${ch.enabled === false ? '<span class="off">disabled</span>' : ''}
-      </div>`;
+      </div>
+      <button class="channel-midi-btn" data-channel-idx="${i}">↓ .mid</button>`;
+    row.querySelector('.channel-midi-btn').addEventListener('click', () => {
+      if (!currentProj) return;
+      const bytes = new MidiWriter(currentProj).build(i);
+      const safeName = ch.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 24) || `channel_${i+1}`;
+      downloadBlob(new Blob([bytes], { type: 'audio/midi' }), `${currentFileBase}_${safeName}.mid`);
+      setStatus('success', `Generated a single-channel .mid for "${ch.name}". Select that channel/track in FL Studio Mobile, then Channel Menu → Import MIDI Tracks.`);
+    });
     chList.appendChild(row);
   });
   detBody.appendChild(chList);
@@ -923,8 +974,36 @@ function renderDetection(proj) {
 
   const note = document.createElement('div');
   note.className = 'note-box';
-  note.innerHTML = 'FL Studio Mobile has a documented <strong>"Import MIDI Tracks"</strong> feature (drop the .mid file in the My MIDI folder, or use Import) — that is a real, guaranteed-to-open path for notes/tempo/time-sig, so it\'s the recommended download here.<br><br>Image-Line has never published the .flm binary spec, so the .flm button is a research artifact: it writes the project using the same FLhd/FLdt event-chunk container FL Studio itself uses for .flp. It may not be read by FL Studio Mobile\'s own parser at all.';
+  note.innerHTML = 'FL Studio Mobile has a documented <strong>"Import MIDI Tracks"</strong> feature on the <strong>Channel Menu</strong> — it imports notes into whichever channel/track is currently selected, one at a time. That\'s why each channel below has its own ↓ .mid button: select the matching channel in the app first, then import.<br><br>Image-Line rewrote FL Studio Mobile from scratch in 2016 (versions 3+), replacing the old Artua-built app — so there may be two unrelated .flm formats across versions, and neither is publicly documented. The lab below has two structurally different guesses to try.';
   detBody.appendChild(note);
+
+  const labLabel = document.createElement('div');
+  labLabel.className = 'section-label';
+  labLabel.textContent = '.flm lab (experimental, unverified)';
+  detBody.appendChild(labLabel);
+
+  const labRow = document.createElement('div');
+  labRow.className = 'lab-row';
+  labRow.innerHTML = `
+    <div class="lab-btn" id="labA">
+      <div class="lab-title">Variant A — FLP container</div>
+      <div class="lab-sub">Reuses FL Studio's own FLhd/FLdt event-chunk format with a .flm extension.</div>
+    </div>
+    <div class="lab-btn" id="labB">
+      <div class="lab-title">Variant B — JSON envelope</div>
+      <div class="lab-sub">4-byte tag + length-prefixed JSON. A guess for a from-scratch v3+ rewrite.</div>
+    </div>`;
+  detBody.appendChild(labRow);
+  labRow.querySelector('#labA').addEventListener('click', () => {
+    const bytes = new FLMWriter(currentProj).build();
+    downloadBlob(new Blob([bytes], { type: 'application/octet-stream' }), `${currentFileBase}.variantA.flm`);
+    setStatus('info', `Generated Variant A (${(bytes.length/1024).toFixed(1)} KB). Test in FL Studio Mobile and tell me what happens.`);
+  });
+  labRow.querySelector('#labB').addEventListener('click', () => {
+    const bytes = new FLMWriterJSON(currentProj).build();
+    downloadBlob(new Blob([bytes], { type: 'application/octet-stream' }), `${currentFileBase}.variantB.flm`);
+    setStatus('info', `Generated Variant B (${(bytes.length/1024).toFixed(1)} KB). Test in FL Studio Mobile and tell me what happens.`);
+  });
 
   detPanel.classList.remove('hidden');
 }
@@ -970,22 +1049,9 @@ midiBtn.addEventListener('click', () => {
     const bytes = writer.build();
     const blob = new Blob([bytes], { type: 'audio/midi' });
     downloadBlob(blob, `${currentFileBase}.mid`);
-    setStatus('success', `Generated ${currentFileBase}.mid (${(bytes.length / 1024).toFixed(1)} KB). Import it via My MIDI / "Import MIDI Tracks" in FL Studio Mobile. Note: pattern arrangement/repeats from the Playlist aren't reconstructed — patterns are stitched back-to-back in pattern order.`);
+    setStatus('success', `Generated ${currentFileBase}.mid (${(bytes.length / 1024).toFixed(1)} KB) with all channels combined on separate MIDI channels. For the documented Channel Menu → Import MIDI Tracks flow, prefer the per-channel ↓ .mid buttons below instead.`);
   } catch (err) {
     setStatus('error', `Could not build the .mid file: ${err.message}`);
-  }
-});
-
-convertBtn.addEventListener('click', () => {
-  if (!currentProj) return;
-  try {
-    const writer = new FLMWriter(currentProj);
-    const bytes = writer.build();
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-    downloadBlob(blob, `${currentFileBase}.flm`);
-    setStatus('success', `Generated ${currentFileBase}.flm (${(bytes.length / 1024).toFixed(1)} KB). Test it in FL Studio Mobile and report back what happens so the layout can be refined.`);
-  } catch (err) {
-    setStatus('error', `Could not build the .flm file: ${err.message}`);
   }
 });
 
