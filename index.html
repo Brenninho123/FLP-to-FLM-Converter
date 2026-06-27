@@ -700,16 +700,14 @@ class MidiWriter {
   build() {
     const p = this.proj;
     const ppq = p.ppq || 96;
-    const tracks = [];
 
-    const tempoEvents = [];
+    const events = [];
     const usPerBeat = Math.round(60000000 / (p.tempo || 140));
-    tempoEvents.push({ tick: 0, priority: 0, bytes: [0xFF,0x51,0x03, (usPerBeat>>16)&0xFF, (usPerBeat>>8)&0xFF, usPerBeat&0xFF] });
+    events.push({ tick: 0, priority: -2, bytes: [0xFF,0x51,0x03, (usPerBeat>>16)&0xFF, (usPerBeat>>8)&0xFF, usPerBeat&0xFF] });
     const denPow = Math.max(0, Math.round(Math.log2(p.timeSigDen || 4)));
-    tempoEvents.push({ tick: 0, priority: 1, bytes: [0xFF,0x58,0x04, p.timeSigNum || 4, denPow, 24, 8] });
+    events.push({ tick: 0, priority: -1, bytes: [0xFF,0x58,0x04, p.timeSigNum || 4, denPow, 24, 8] });
     const titleBytes = MidiWriter.textBytes(p.title || 'Untitled');
-    tempoEvents.push({ tick: 0, priority: -1, bytes: [0xFF,0x03, ...MidiWriter.vlq(titleBytes.length), ...titleBytes] });
-    tracks.push(MidiWriter.trackChunk(tempoEvents));
+    events.push({ tick: 0, priority: -3, bytes: [0xFF,0x03, ...MidiWriter.vlq(titleBytes.length), ...titleBytes] });
 
     let patternOffset = 0;
     const patternOffsets = p.patterns.map(pat => {
@@ -720,41 +718,22 @@ class MidiWriter {
       return start;
     });
 
-    const byChannel = new Map();
     p.patterns.forEach((pat, pi) => {
       pat.notes.forEach(n => {
-        const idx = Math.min(p.channels.length - 1, Math.max(0, n.channel ?? 0));
-        if (!byChannel.has(idx)) byChannel.set(idx, []);
-        byChannel.get(idx).push({
-          tick: patternOffsets[pi] + n.position,
-          length: Math.max(1, n.length),
-          key: Math.max(0, Math.min(127, n.key)),
-          velocity: Math.max(1, Math.min(127, n.velocity || 100)),
-        });
+        const idx = Math.min(Math.max(0, p.channels.length - 1), Math.max(0, n.channel ?? 0));
+        const midiCh = idx % 16;
+        const tick = patternOffsets[pi] + n.position;
+        const length = Math.max(1, n.length);
+        const key = Math.max(0, Math.min(127, n.key));
+        const velocity = Math.max(1, Math.min(127, n.velocity || 100));
+        events.push({ tick, priority: 1, bytes: [0x90 | midiCh, key, velocity] });
+        events.push({ tick: tick + length, priority: 0, bytes: [0x80 | midiCh, key, 0] });
       });
     });
 
-    if (byChannel.size === 0) {
-      tracks.push(MidiWriter.trackChunk([]));
-    }
-
-    for (const [idx, notes] of byChannel.entries()) {
-      const ch = p.channels[idx];
-      const events = [];
-      const nameBytes = MidiWriter.textBytes(ch ? ch.name : `Channel ${idx + 1}`);
-      events.push({ tick: 0, priority: -1, bytes: [0xFF,0x03, ...MidiWriter.vlq(nameBytes.length), ...nameBytes] });
-      const midiCh = idx % 16;
-      notes.forEach(n => {
-        events.push({ tick: n.tick, priority: 1, bytes: [0x90 | midiCh, n.key, n.velocity] });
-        events.push({ tick: n.tick + n.length, priority: 0, bytes: [0x80 | midiCh, n.key, 0] });
-      });
-      tracks.push(MidiWriter.trackChunk(events));
-    }
-
-    const header = [0x4D,0x54,0x68,0x64, 0,0,0,6, 0,1, (tracks.length>>8)&0xFF, tracks.length&0xFF, (ppq>>8)&0xFF, ppq&0xFF];
-    const out = [...header];
-    tracks.forEach(t => out.push(...t));
-    return new Uint8Array(out);
+    const track = MidiWriter.trackChunk(events);
+    const header = [0x4D,0x54,0x68,0x64, 0,0,0,6, 0,0, 0,1, (ppq>>8)&0xFF, ppq&0xFF];
+    return new Uint8Array([...header, ...track]);
   }
 }
 
