@@ -1,335 +1,279 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FLP → FLM Converter</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLP → FLM Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --bg:       #04040A;
-      --surface:  #0B0B16;
-      --surface2: #12121F;
-      --surface3: #18182A;
-      --border:   #1E1E32;
-      --border2:  #2A2A42;
-      --accent:   #FF7A00;
-      --accent2:  #FF4500;
-      --glow:     rgba(255,122,0,0.15);
-      --success:  #00D97E;
-      --error:    #FF3B5C;
-      --info:     #4FA3FF;
-      --text:     #E2E2F0;
-      --muted:    #484870;
-      --dim:      #2A2A48;
-    }
+:root {
+  --bg:       #04040A;
+  --surface:  #0B0B16;
+  --surface2: #12121F;
+  --surface3: #18182A;
+  --border:   #1E1E32;
+  --border2:  #2A2A42;
+  --accent:   #FF7A00;
+  --accent2:  #FF4500;
+  --glow:     rgba(255,122,0,0.15);
+  --success:  #00D97E;
+  --error:    #FF3B5C;
+  --info:     #4FA3FF;
+  --text:     #E2E2F0;
+  --muted:    #484870;
+  --dim:      #2A2A48;
+}
 
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 36px 20px 60px;
-      position: relative;
-      overflow-x: hidden;
-    }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 20px 60px;
+  position: relative;
+  overflow-x: hidden;
+}
 
-    /* Ambient background glow */
-    body::before {
-      content: '';
-      position: fixed;
-      top: -200px; left: 50%;
-      transform: translateX(-50%);
-      width: 700px; height: 400px;
-      background: radial-gradient(ellipse, rgba(255,100,0,0.07) 0%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-      background-size: 200px 200px;
-      pointer-events: none; z-index: 0; opacity: 0.6;
-    }
+body::before {
+  content: '';
+  position: fixed;
+  top: -200px; left: 50%;
+  transform: translateX(-50%);
+  width: 700px; height: 400px;
+  background: radial-gradient(ellipse, rgba(255,100,0,0.07) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  pointer-events: none; z-index: 0; opacity: 0.6;
+}
 
-    .container { width: 100%; max-width: 580px; position: relative; z-index: 1; }
+.container { width: 100%; max-width: 640px; position: relative; z-index: 1; }
 
-    /* ── HEADER ── */
-    .header {
-      text-align: center;
-      margin-bottom: 36px;
-      animation: fadeDown 0.6s ease both;
-    }
-    .logo-badge {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: var(--surface2); border: 1px solid var(--border2);
-      border-radius: 999px; padding: 6px 16px 6px 10px;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
-      color: var(--accent); letter-spacing: 0.5px;
-      margin-bottom: 18px;
-    }
-    .logo-dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
-    h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2rem, 6vw, 2.8rem);
-      font-weight: 800;
-      line-height: 1.1;
-      margin-bottom: 10px;
-      background: linear-gradient(140deg, #FFB547 0%, var(--accent) 40%, var(--accent2) 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .header-sub {
-      color: var(--muted); font-size: 0.92rem; font-weight: 300;
-      letter-spacing: 0.2px;
-    }
+.header { text-align: center; margin-bottom: 36px; animation: fadeDown 0.6s ease both; }
+.logo-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 999px; padding: 6px 16px 6px 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+  color: var(--accent); letter-spacing: 0.5px;
+  margin-bottom: 18px;
+}
+.logo-dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(2rem, 6vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 10px;
+  background: linear-gradient(140deg, #FFB547 0%, var(--accent) 40%, var(--accent2) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.header-sub { color: var(--muted); font-size: 0.92rem; font-weight: 300; letter-spacing: 0.2px; }
 
-    /* ── DROP ZONE ── */
-    .drop-zone {
-      border: 1.5px dashed var(--border2);
-      border-radius: 20px;
-      padding: 52px 28px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
-      background: var(--surface);
-      position: relative;
-      margin-bottom: 0;
-      animation: fadeUp 0.5s ease 0.1s both;
-    }
-    .drop-zone:hover, .drop-zone.over {
-      border-color: var(--accent);
-      background: #120C00;
-      box-shadow: 0 0 40px var(--glow), inset 0 0 40px rgba(255,122,0,0.03);
-    }
-    .drop-zone input[type=file] {
-      position: absolute; inset: 0; opacity: 0;
-      cursor: pointer; width: 100%; height: 100%;
-    }
-    .drop-icon {
-      font-size: 2.8rem; margin-bottom: 14px;
-      filter: drop-shadow(0 0 12px rgba(255,122,0,0.4));
-      display: block;
-    }
-    .drop-title {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.1rem; font-weight: 700;
-      color: var(--text); margin-bottom: 6px;
-    }
-    .drop-sub { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
-    .drop-formats {
-      display: inline-flex; gap: 6px; margin-top: 14px;
-    }
-    .fmt-tag {
-      background: var(--surface3); border: 1px solid var(--border);
-      border-radius: 6px; padding: 3px 10px;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
-      color: var(--accent);
-    }
+.drop-zone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 20px;
+  padding: 52px 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+  background: var(--surface);
+  position: relative;
+  animation: fadeUp 0.5s ease 0.1s both;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--accent);
+  background: #120C00;
+  box-shadow: 0 0 40px var(--glow), inset 0 0 40px rgba(255,122,0,0.03);
+}
+.drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.drop-icon { font-size: 2.8rem; margin-bottom: 14px; filter: drop-shadow(0 0 12px rgba(255,122,0,0.4)); display: block; }
+.drop-title { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.drop-sub { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+.drop-formats { display: inline-flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+.fmt-tag {
+  background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+  color: var(--accent);
+}
 
-    /* ── PANEL ── */
-    .panel {
-      margin-top: 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      overflow: hidden;
-      animation: fadeUp 0.4s ease both;
-    }
-    .panel-header {
-      padding: 13px 20px;
-      background: var(--surface2);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem; color: var(--muted);
-      letter-spacing: 0.5px;
-    }
-    .panel-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--accent); box-shadow: 0 0 6px var(--accent);
-    }
-    .panel-body { padding: 20px; }
+.panel {
+  margin-top: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  animation: fadeUp 0.4s ease both;
+}
+.panel-header {
+  padding: 13px 20px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.panel-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.panel-body { padding: 20px; }
 
-    /* Info grid */
-    .info-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr);
-      gap: 10px; margin-bottom: 18px;
-    }
-    @media (max-width: 440px) { .info-grid { grid-template-columns: repeat(2, 1fr); } }
-    .info-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
-      transition: border-color 0.2s;
-    }
-    .info-card:hover { border-color: var(--border2); }
-    .info-label {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.65rem; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 1px;
-      margin-bottom: 6px;
-    }
-    .info-value {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.3rem; font-weight: 700;
-      color: var(--accent); line-height: 1;
-    }
-    .info-unit { font-size: 0.6em; color: var(--muted); font-family: 'DM Sans', sans-serif; font-weight: 300; }
+.info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+@media (max-width: 460px) { .info-grid { grid-template-columns: repeat(2, 1fr); } }
+.info-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; transition: border-color 0.2s; }
+.info-card:hover { border-color: var(--border2); }
+.info-label { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.info-value { font-family: 'Syne', sans-serif; font-size: 1.25rem; font-weight: 700; color: var(--accent); line-height: 1.1; word-break: break-word; }
+.info-unit { font-size: 0.6em; color: var(--muted); font-family: 'DM Sans', sans-serif; font-weight: 300; }
 
-    /* Section */
-    .section-label {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.68rem; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 1px;
-      margin: 16px 0 8px;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .section-label::after {
-      content: ''; flex: 1; height: 1px; background: var(--border);
-    }
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 18px 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-    /* Tags */
-    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
-    .tag {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 5px 11px;
-      font-size: 0.8rem; color: #9090C0;
-      display: flex; align-items: center; gap: 6px;
-      transition: border-color 0.15s;
-    }
-    .tag:hover { border-color: var(--border2); color: var(--text); }
-    .tag.muted { opacity: 0.4; text-decoration: line-through; }
-    .tag-count {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem; color: var(--accent); font-weight: 600;
-    }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 11px;
+  font-size: 0.8rem; color: #9090C0;
+  display: flex; align-items: center; gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.tag:hover { border-color: var(--border2); color: var(--text); }
+.tag.muted { opacity: 0.45; }
+.tag.active { border-color: var(--accent); color: var(--text); background: #160E00; }
+.tag-count { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); font-weight: 600; }
+.tag-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
-    /* Piano roll mini-viz */
-    .piano-roll {
-      height: 40px; border-radius: 8px; overflow: hidden;
-      background: var(--surface2); border: 1px solid var(--border);
-      position: relative; margin-top: 6px;
-    }
-    .piano-roll canvas { width: 100%; height: 100%; display: block; }
+.channel-list { display: flex; flex-direction: column; gap: 6px; }
+.channel-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 12px;
+  font-size: 0.82rem;
+}
+.channel-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.channel-name { flex: 1; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); display: flex; gap: 8px; flex-shrink: 0; }
+.channel-meta span.off { color: var(--error); }
 
-    /* Stat row */
-    .stat-row {
-      display: flex; gap: 20px; flex-wrap: wrap;
-      margin-top: 6px;
-    }
-    .stat { font-size: 0.83rem; color: var(--muted); }
-    .stat strong { color: var(--text); font-weight: 500; }
+.piano-roll {
+  height: 130px; border-radius: 10px; overflow: hidden;
+  background: var(--surface2); border: 1px solid var(--border);
+  position: relative; margin-top: 6px;
+}
+.piano-roll canvas { width: 100%; height: 100%; display: block; }
+.piano-roll .empty-hint {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--dim);
+}
 
-    /* Warnings */
-    .warning-box {
-      background: #140A00; border: 1px solid #3A2000;
-      border-radius: 10px; padding: 10px 14px;
-      font-size: 0.8rem; color: #CC7700;
-      margin-top: 10px; line-height: 1.4;
-    }
+.stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.stat { font-size: 0.8rem; color: var(--muted); }
+.stat strong { color: var(--text); font-weight: 500; }
 
-    /* ── PROGRESS ── */
-    .progress-wrap {
-      margin-top: 14px;
-      animation: fadeUp 0.3s ease both;
-    }
-    .progress-header {
-      display: flex; justify-content: space-between;
-      margin-bottom: 7px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem; color: var(--muted);
-    }
-    .progress-bar {
-      height: 3px; background: var(--surface2);
-      border-radius: 3px; overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent2), var(--accent), #FFD000);
-      border-radius: 3px;
-      transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
-      width: 0%;
-      position: relative;
-    }
-    .progress-fill::after {
-      content: '';
-      position: absolute; right: 0; top: -3px;
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-    }
+.warning-box {
+  background: #140A00; border: 1px solid #3A2000;
+  border-radius: 10px; padding: 10px 14px;
+  font-size: 0.8rem; color: #CC7700;
+  margin-top: 10px; line-height: 1.45;
+}
+.warning-box ul { padding-left: 18px; }
+.warning-box li { margin-top: 2px; }
 
-    /* ── STATUS ── */
-    .status {
-      margin-top: 12px;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 0.85rem; line-height: 1.4;
-      display: none;
-    }
-    .status.success { background:#001A0E; border:1px solid #004A28; color:var(--success); display:block; }
-    .status.error   { background:#1A0008; border:1px solid #4A001A; color:var(--error);   display:block; }
-    .status.info    { background:#00081A; border:1px solid #002A4A; color:var(--info);    display:block; }
+.note-box {
+  background: #00081A; border: 1px solid #002A4A;
+  border-radius: 10px; padding: 10px 14px;
+  font-size: 0.78rem; color: var(--info);
+  margin-top: 10px; line-height: 1.5;
+}
 
-    /* ── CONVERT BUTTON ── */
-    .convert-btn {
-      width: 100%; margin-top: 14px; padding: 16px;
-      background: linear-gradient(135deg, var(--accent2) 0%, var(--accent) 60%, #FFAA00 100%);
-      color: #fff; border: none; border-radius: 14px;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem; font-weight: 700;
-      cursor: pointer; letter-spacing: 0.3px;
-      position: relative; overflow: hidden;
-      transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
-      box-shadow: 0 4px 20px rgba(255,122,0,0.25);
-      animation: fadeUp 0.4s ease both;
-    }
-    .convert-btn::before {
-      content: '';
-      position: absolute; inset: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
-    }
-    .convert-btn:hover { box-shadow: 0 6px 28px rgba(255,122,0,0.4); opacity: 0.95; }
-    .convert-btn:active { transform: scale(0.98); }
-    .convert-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+.progress-wrap { margin-top: 14px; animation: fadeUp 0.3s ease both; }
+.progress-header { display: flex; justify-content: space-between; margin-bottom: 7px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--muted); }
+.progress-bar { height: 3px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent2), var(--accent), #FFD000);
+  border-radius: 3px;
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+  width: 0%;
+  position: relative;
+}
+.progress-fill::after {
+  content: ''; position: absolute; right: 0; top: -3px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+}
 
-    /* ── FOOTER ── */
-    footer {
-      margin-top: 48px; text-align: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.68rem; color: var(--dim);
-      line-height: 2; position: relative; z-index: 1;
-    }
+.status { margin-top: 12px; padding: 12px 16px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; display: none; }
+.status.success { background:#001A0E; border:1px solid #004A28; color:var(--success); display:block; }
+.status.error   { background:#1A0008; border:1px solid #4A001A; color:var(--error);   display:block; }
+.status.info    { background:#00081A; border:1px solid #002A4A; color:var(--info);    display:block; }
 
-    /* ── ANIMATIONS ── */
-    @keyframes fadeDown { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:none; } }
-    @keyframes fadeUp   { from { opacity:0; transform:translateY(14px);  } to { opacity:1; transform:none; } }
-    @keyframes pulse    { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+.btn-row { display: flex; gap: 10px; margin-top: 14px; }
+.btn {
+  flex: 1; padding: 16px;
+  border: none; border-radius: 14px;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.3px;
+  transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
+  animation: fadeUp 0.4s ease both;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent2) 0%, var(--accent) 60%, #FFAA00 100%);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(255,122,0,0.25);
+}
+.btn-primary:hover { box-shadow: 0 6px 28px rgba(255,122,0,0.4); opacity: 0.95; }
+.btn-secondary {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
-    .hidden { display: none !important; }
-  </style>
+footer {
+  margin-top: 48px; text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem; color: var(--dim);
+  line-height: 2; position: relative; z-index: 1;
+}
+
+@keyframes fadeDown { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:none; } }
+@keyframes fadeUp   { from { opacity:0; transform:translateY(14px);  } to { opacity:1; transform:none; } }
+@keyframes pulse    { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+
+.hidden { display: none !important; }
+</style>
 </head>
 <body>
 <div class="container">
 
-  <!-- HEADER -->
   <div class="header">
     <div class="logo-badge"><div class="logo-dot"></div> BEST-EFFORT CONVERTER</div>
     <h1>FLP → FLM</h1>
-    <p class="header-sub">FL Studio Desktop projects → FL Studio Mobile · Full binary detection</p>
+    <p class="header-sub">FL Studio Desktop projects → FL Studio Mobile · binary detection + reconstruction</p>
   </div>
 
-  <!-- DROP ZONE -->
   <div class="drop-zone" id="dropZone">
     <input type="file" id="fileInput" accept=".flp">
     <span class="drop-icon">🎹</span>
@@ -339,11 +283,10 @@
       <span class="fmt-tag">FL Studio 11</span>
       <span class="fmt-tag">FL Studio 12</span>
       <span class="fmt-tag">FL Studio 20</span>
-      <span class="fmt-tag">FL Studio 21</span>
+      <span class="fmt-tag">FL Studio 21+</span>
     </div>
   </div>
 
-  <!-- PROGRESS -->
   <div class="progress-wrap hidden" id="progressWrap">
     <div class="progress-header">
       <span id="progressLabel">Reading…</span>
@@ -352,172 +295,159 @@
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
   </div>
 
-  <!-- STATUS -->
   <div class="status" id="status"></div>
 
-  <!-- DETECTION PANEL -->
   <div class="panel hidden" id="detPanel">
     <div class="panel-header"><div class="panel-dot"></div> DETECTED PROJECT DATA</div>
     <div class="panel-body" id="detBody"></div>
   </div>
 
-  <!-- CONVERT BUTTON -->
-  <button class="convert-btn hidden" id="convertBtn">⬇ Convert &amp; Download .flm</button>
+  <div class="btn-row hidden" id="btnRow">
+    <button class="btn btn-primary" id="convertBtn">⬇ Download .flm</button>
+    <button class="btn btn-secondary" id="jsonBtn">⬇ Analysis (.json)</button>
+  </div>
 
   <footer>
     FLP → FLM Converter · Apache 2.0 · github.com/Brenninho123/FLP-to-FLM-Converter<br>
-    Best-effort binary parser · Plugin samples not included · Manual tuning may be needed
+    Best-effort binary parser/writer · plugin samples not included · the .flm output is experimental
   </footer>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════════
-//  FLP EVENT IDs
-// ═══════════════════════════════════════════════════════════════════
 const EV = {
-  // Byte events (0–63)
-  ENABLED:      0,
-  VOL:          2,
-  PAN:          3,
-  MUTED:        7,
-  CHAN_TYPE:   11,
-
-  // Word events (64–127)
-  TEMPO_OLD:   64,   // BPM as integer (older FL)
-  CUR_PATTERN: 65,   // which pattern is being described
-  MAIN_VOL:    66,
-  MAIN_PITCH:  67,
-  TIMESIG_NUM: 73,
-  TIMESIG_DEN: 74,
-
-  // DWord events (128–191)
-  COLOR:      128,
-  TEMPO_NEW:  133,   // BPM * 1000 (newer FL)
-
-  // Data events (192–255)
-  CHAN_NAME:  192,   // 0xC0 — starts a new channel block
-  PAT_NAME:   193,   // 0xC1
-  TITLE:      199,   // 0xC7
-  COMMENT:    200,   // 0xC8
-  AUTHOR:     201,   // 0xC9
-  VERSION:    203,   // 0xCB
-  GENRE:      209,   // 0xD1
-  PAT_NOTES:  224,   // 0xE0 — raw note binary data
+  ENABLED: 0, VOL: 2, PAN: 3, MUTED: 7, CHAN_TYPE: 11,
+  TEMPO_OLD: 64, CUR_PATTERN: 65, MAIN_VOL: 66, MAIN_PITCH: 67, TIMESIG_NUM: 73, TIMESIG_DEN: 74,
+  COLOR: 128, TEMPO_NEW: 133,
+  CHAN_NAME: 192, PAT_NAME: 193, TITLE: 199, COMMENT: 200, AUTHOR: 201, VERSION: 203, GENRE: 209, PAT_NOTES: 224,
 };
 
-// ═══════════════════════════════════════════════════════════════════
-//  FLP PARSER
-// ═══════════════════════════════════════════════════════════════════
+const PALETTE = ['#FF7A00','#4FA3FF','#00D97E','#FF3B5C','#FFD000','#B06AFF','#00C2D9','#FF6AC2'];
+
+function colorForIndex(i) { return PALETTE[i % PALETTE.length]; }
+
+function rgbFromFlpColor(c) {
+  if (!c) return null;
+  const r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
+  return `rgb(${r},${g},${b})`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function formatDuration(sec) {
+  if (!sec || !isFinite(sec)) return '—';
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
 class FLPParser {
   constructor(buf) {
     this.buf = buf;
     this.dv  = new DataView(buf);
     this.pos = 0;
     this.proj = {
-      version: '', title: 'Untitled', author: '', genre: '', comment: '',
+      version: '', versionInt: 0, title: 'Untitled', author: '', genre: '', comment: '',
       ppq: 96, tempo: 140, timeSigNum: 4, timeSigDen: 4,
-      mainVolume: 100, mainPitch: 0, format: 0,
+      mainVolume: 100, mainPitch: 0, format: 0, numChannelsHeader: 0,
       channels: [], patterns: [], warnings: []
     };
     this.curCh  = null;
     this.curPat = null;
   }
 
-  // ── Low-level readers ──
-  u8()  { return this.dv.getUint8(this.pos++); }
+  u8()  { const v = this.dv.getUint8(this.pos); this.pos += 1; return v; }
   u16() { const v = this.dv.getUint16(this.pos, true); this.pos += 2; return v; }
   u32() { const v = this.dv.getUint32(this.pos, true); this.pos += 4; return v; }
 
-  magic() {
-    return String.fromCharCode(this.u8(), this.u8(), this.u8(), this.u8());
-  }
+  magic() { return String.fromCharCode(this.u8(), this.u8(), this.u8(), this.u8()); }
 
   varLen() {
     let n = 0, shift = 0, b;
     do { b = this.u8(); n |= (b & 0x7F) << shift; shift += 7; } while (b & 0x80);
-    return n;
+    return n >>> 0;
   }
 
-  // Smart text decoder: tries UTF-16LE (newer FL) → UTF-8 → Latin-1
   decode(bytes) {
-    if (bytes.length >= 2 && bytes[1] === 0) {
-      try {
-        const s = new TextDecoder('utf-16le').decode(bytes);
-        return s.replace(/\0/g, '').trim();
-      } catch {}
+    if (bytes.length >= 2 && bytes.length % 2 === 0) {
+      let zeroOdd = true;
+      for (let i = 1; i < bytes.length; i += 2) { if (bytes[i] !== 0) { zeroOdd = false; break; } }
+      if (zeroOdd) {
+        try {
+          const s = new TextDecoder('utf-16le').decode(bytes);
+          return s.replace(/\u0000+$/,'').trim();
+        } catch (e) {}
+      }
     }
-    try { return new TextDecoder('utf-8').decode(bytes).replace(/\0/g, '').trim(); } catch {}
-    return new TextDecoder('latin1').decode(bytes).replace(/\0/g, '').trim();
+    try { return new TextDecoder('utf-8').decode(bytes).replace(/\u0000+$/,'').trim(); } catch (e) {}
+    return new TextDecoder('latin1').decode(bytes).replace(/\u0000+$/,'').trim();
   }
 
-  // ── Main parse ──
   parse() {
     const m1 = this.magic();
-    if (m1 !== 'FLhd') throw new Error(`Not a valid .flp file — got magic "${m1}"`);
-    this.u32(); // header length (always 6)
-    this.proj.format      = this.u16();
-    this.proj.numChannels = this.u16();
-    this.proj.ppq         = this.u16();
+    if (m1 !== 'FLhd') throw new Error(`Not a valid .flp file — header magic was "${m1}"`);
+    this.u32();
+    this.proj.format          = this.u16();
+    this.proj.numChannelsHeader = this.u16();
+    this.proj.ppq              = this.u16() || 96;
 
     const m2 = this.magic();
     if (m2 !== 'FLdt') throw new Error(`Expected FLdt chunk — got "${m2}"`);
     const dlen = this.u32();
-    const end  = this.pos + dlen;
+    const end  = Math.min(this.pos + dlen, this.buf.byteLength);
 
     let safety = 0;
-    while (this.pos < end && this.pos < this.buf.byteLength - 1 && ++safety < 2000000) {
-      try { this.parseEvent(); } catch (e) {
-        this.proj.warnings.push(`Parse stopped at offset ${this.pos}: ${e.message}`);
+    while (this.pos < end - 1 && ++safety < 4000000) {
+      const before = this.pos;
+      try { this.parseEvent(end); }
+      catch (e) {
+        this.proj.warnings.push(`Parse stopped at offset ${before}: ${e.message}`);
         break;
       }
+      if (this.pos <= before) break;
     }
+    if (!this.proj.channels.length) this.proj.warnings.push('No channels were detected — the file may use an unsupported FLP revision.');
     return this.proj;
   }
 
-  parseEvent() {
+  parseEvent(end) {
     const id = this.u8();
-
     if (id < 64) {
-      // BYTE — 1 byte data
       this.onByte(id, this.u8());
     } else if (id < 128) {
-      // WORD — 2 bytes data
       this.onWord(id, this.u16());
     } else if (id < 192) {
-      // DWORD — 4 bytes data
       this.onDWord(id, this.u32());
     } else {
-      // VARIABLE LENGTH — length prefix + data
       const len   = this.varLen();
       const start = this.pos;
-      const safe  = Math.min(len, this.buf.byteLength - this.pos);
+      const safe  = Math.max(0, Math.min(len, this.buf.byteLength - this.pos));
       const bytes = new Uint8Array(this.buf, this.pos, safe);
       this.onData(id, bytes, len);
-      this.pos = start + len; // always advance by declared length
+      this.pos = start + len;
     }
   }
 
-  // ── Event handlers ──
   onByte(id, v) {
     const ch = this.curCh;
     if (!ch) return;
     switch (id) {
-      case EV.ENABLED:   ch.enabled  = v !== 0;    break;
-      case EV.VOL:       ch.volume   = v;           break;
-      case EV.PAN:       ch.pan      = v - 64;      break; // 64 = center
-      case EV.MUTED:     ch.muted    = v === 0;     break;
-      case EV.CHAN_TYPE:  ch.type    = v;            break;
+      case EV.ENABLED:   ch.enabled = v !== 0; break;
+      case EV.VOL:       ch.volume  = v;       break;
+      case EV.PAN:       ch.pan     = v - 64;  break;
+      case EV.MUTED:     ch.muted   = v !== 0; break;
+      case EV.CHAN_TYPE: ch.type    = v;       break;
     }
   }
 
   onWord(id, v) {
     switch (id) {
-      case EV.TEMPO_OLD:    if (v > 0) this.proj.tempo = v;    break;
-      case EV.CUR_PATTERN:  this.switchPattern(v);              break;
-      case EV.MAIN_VOL:     this.proj.mainVolume = v;           break;
-      case EV.MAIN_PITCH:   this.proj.mainPitch  = v;           break;
-      case EV.TIMESIG_NUM:  this.proj.timeSigNum = v || 4;      break;
-      case EV.TIMESIG_DEN:  this.proj.timeSigDen = v || 4;      break;
+      case EV.TEMPO_OLD:   if (v > 0) this.proj.tempo = v; break;
+      case EV.CUR_PATTERN: this.switchPattern(v); break;
+      case EV.MAIN_VOL:    this.proj.mainVolume = v; break;
+      case EV.MAIN_PITCH:  this.proj.mainPitch  = v; break;
+      case EV.TIMESIG_NUM: this.proj.timeSigNum = v || 4; break;
+      case EV.TIMESIG_DEN: this.proj.timeSigDen = v || 4; break;
     }
   }
 
@@ -536,7 +466,6 @@ class FLPParser {
   onData(id, bytes, len) {
     switch (id) {
       case EV.CHAN_NAME: {
-        // Each channel name event marks the start of a new channel block
         const name = this.decode(bytes) || `Channel ${this.proj.channels.length + 1}`;
         this.curCh = { name, volume: 100, pan: 0, enabled: true, muted: false, type: 0, color: 0 };
         this.proj.channels.push(this.curCh);
@@ -547,410 +476,437 @@ class FLPParser {
         if (this.curPat && name) this.curPat.name = name;
         break;
       }
-      case EV.TITLE:   { const s = this.decode(bytes); if (s) this.proj.title   = s; break; }
-      case EV.COMMENT:   this.proj.comment = this.decode(bytes);                       break;
-      case EV.AUTHOR:    this.proj.author  = this.decode(bytes);                       break;
-      case EV.VERSION:   this.proj.version = this.decode(bytes);                       break;
-      case EV.GENRE:     this.proj.genre   = this.decode(bytes);                       break;
-      case EV.PAT_NOTES: this.parseNotes(bytes, len);                                  break;
+      case EV.TITLE:   { const s = this.decode(bytes); if (s) this.proj.title = s; break; }
+      case EV.COMMENT: this.proj.comment = this.decode(bytes); break;
+      case EV.AUTHOR:  this.proj.author  = this.decode(bytes); break;
+      case EV.VERSION: {
+        const s = this.decode(bytes);
+        this.proj.version = s;
+        const parts = s.split('.').map(n => parseInt(n, 10) || 0);
+        this.proj.versionInt = (parts[0] || 0) * 1000 + (parts[1] || 0) * 10 + (parts[2] || 0);
+        break;
+      }
+      case EV.GENRE:     this.proj.genre = this.decode(bytes); break;
+      case EV.PAT_NOTES: this.parseNotes(bytes); break;
     }
   }
 
   switchPattern(idx) {
-    while (this.proj.patterns.length <= idx)
-      this.proj.patterns.push({
-        name: `Pattern ${this.proj.patterns.length + 1}`,
-        notes: [], color: 0
-      });
+    while (this.proj.patterns.length <= idx) {
+      this.proj.patterns.push({ id: this.proj.patterns.length, name: `Pattern ${this.proj.patterns.length + 1}`, color: 0, notes: [] });
+    }
     this.curPat = this.proj.patterns[idx];
   }
 
-  // ── Note binary decoder ──
-  // FL Studio stores notes as packed structs; size varies by version.
-  // We auto-detect 20 vs 24 vs 16 bytes per note.
-  parseNotes(bytes, len) {
-    if (!this.curPat || len < 16) return;
+  parseNotes(bytes) {
+    if (!this.curPat || bytes.length < 16) return;
 
-    // Detect note struct size by divisibility (prefer 20 for FL 12-20, 24 for FL 21+)
-    let ns = 20;
-    if      (len % 24 === 0) ns = 24;
-    else if (len % 20 === 0) ns = 20;
-    else if (len % 16 === 0) ns = 16;
-    else return; // can't determine layout
+    let ns = 0;
+    if      (bytes.length % 24 === 0) ns = 24;
+    else if (bytes.length % 20 === 0) ns = 20;
+    else if (bytes.length % 16 === 0) ns = 16;
+    else return;
 
-    const count = Math.floor(len / ns);
+    const count = Math.floor(bytes.length / ns);
+    const channelIndex = Math.max(0, this.proj.channels.length - 1);
+
     for (let i = 0; i < count; i++) {
-      const o  = i * ns;
+      const o = i * ns;
       if (o + ns > bytes.length) break;
       const dv = new DataView(bytes.buffer, bytes.byteOffset + o, ns);
 
-      // Position: always uint32 at offset 0
-      const pos = dv.getUint32(0, true);
+      const position = dv.getUint32(0, true);
+      let length = 0, key = 60, finePitch = 0, release = 0, pan = 64, velocity = 100, rackChannel = channelIndex;
 
-      // Duration: uint32 for 20/24-byte notes, uint16 for 16-byte
-      const dur = ns >= 20 ? dv.getUint32(4, true) : dv.getUint16(4, true);
+      if (ns === 24) {
+        rackChannel = dv.getUint8(6);
+        finePitch   = dv.getUint16(8, true);
+        release     = dv.getUint16(10, true);
+        length      = dv.getUint32(12, true);
+        key         = dv.getUint8(16);
+        pan         = dv.getUint8(20);
+        velocity    = dv.getUint8(21);
+      } else if (ns === 20) {
+        rackChannel = dv.getUint8(6);
+        finePitch   = dv.getUint16(8, true);
+        release     = dv.getUint16(10, true);
+        length      = dv.getUint32(12, true);
+        key         = dv.getUint8(16);
+        pan         = dv.getUint8(18);
+        velocity    = dv.getUint8(19);
+      } else {
+        length   = dv.getUint32(4, true);
+        key      = dv.getUint8(8);
+        pan      = dv.getUint8(ns - 2);
+        velocity = dv.getUint8(ns - 1);
+      }
 
-      // Key & channel depend on layout
-      const keyOff = ns >= 20 ? 8 : 6;
-      const chOff  = ns >= 20 ? 9 : 7;
-      const velOff = ns >= 20 ? 10 : 8;
+      if (length <= 0 || length > this.proj.ppq * 256) continue;
 
-      const key = dv.getUint8(keyOff);
-      const ch  = dv.getUint8(chOff);
-      const vel = dv.getUint8(velOff);
-
-      // Sanity filter
-      if (key > 131 || vel > 127) continue;
-
-      this.curPat.notes.push({
-        pos, dur,
-        key: Math.max(0, Math.min(131, key)),
-        ch,
-        vel: Math.max(1, Math.min(127, vel || 100))
-      });
+      this.curPat.notes.push({ position, length, key, finePitch, release, pan, velocity, channel: rackChannel });
     }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  FLM GENERATOR  (ZIP + project.xml + README.txt)
-// ═══════════════════════════════════════════════════════════════════
-function esc(s) {
-  return (s || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-function colorHex(n) {
-  return '#' + ((n || 0) & 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase();
-}
-// FL key 60 = C5 in FL UI; keep same value for MIDI mapping
-function flKeyToName(k) {
-  const N = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  return N[k % 12] + (Math.floor(k / 12) - 1);
-}
+class FLMWriter {
+  constructor(proj) {
+    this.proj = proj;
+    this.bytes = [];
+  }
 
-async function generateFLM(proj) {
-  const zip = new JSZip();
-  const bpm = Math.round(proj.tempo * 1000) / 1000;
-  const activePats = proj.patterns.filter(p => p.notes.length > 0);
-  const totalNotes = activePats.reduce((s, p) => s + p.notes.length, 0);
+  u8(v)  { this.bytes.push(v & 0xFF); }
+  u16(v) { this.bytes.push(v & 0xFF, (v >> 8) & 0xFF); }
+  u32(v) { this.bytes.push(v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF); }
+  magic(s) { for (let i = 0; i < 4; i++) this.u8(s.charCodeAt(i)); }
 
-  // ── project.xml ──
-  const X = [];
-  X.push(`<?xml version="1.0" encoding="UTF-8"?>`);
-  X.push(`<!-- FL Studio → FL Studio Mobile Conversion`);
-  X.push(`     Source: FL Studio ${proj.version || '?'}`);
-  X.push(`     Channels: ${proj.channels.length} | Patterns: ${activePats.length} | Notes: ${totalNotes} -->`);
-  X.push(`<FLMobileProject`);
-  X.push(`  version="2.0"`);
-  X.push(`  tempo="${bpm}"`);
-  X.push(`  swing="0"`);
-  X.push(`  timeSigNumerator="${proj.timeSigNum}"`);
-  X.push(`  timeSigDenominator="${proj.timeSigDen}"`);
-  X.push(`  ppq="${proj.ppq}"`);
-  X.push(`  mainVolume="${proj.mainVolume}"`);
-  X.push(`  mainPitch="${proj.mainPitch}">`);
+  varLen(n) {
+    n = n >>> 0;
+    do {
+      let b = n & 0x7F;
+      n >>>= 7;
+      if (n > 0) b |= 0x80;
+      this.u8(b);
+    } while (n > 0);
+  }
 
-  X.push(`  <info`);
-  X.push(`    title="${esc(proj.title)}"`);
-  X.push(`    author="${esc(proj.author)}"`);
-  X.push(`    genre="${esc(proj.genre)}"`);
-  X.push(`    comment="${esc(proj.comment)}"/>`);
+  text(id, str) {
+    const body = [];
+    const s = String(str ?? '');
+    for (const ch of s) {
+      const code = ch.codePointAt(0);
+      body.push(code & 0xFF, (code >> 8) & 0xFF);
+    }
+    body.push(0, 0);
+    this.u8(id);
+    this.varLen(body.length);
+    for (const b of body) this.u8(b);
+  }
 
-  X.push(`  <channels count="${proj.channels.length}">`);
-  proj.channels.forEach((ch, i) => {
-    X.push(`    <channel`);
-    X.push(`      index="${i}"`);
-    X.push(`      name="${esc(ch.name)}"`);
-    X.push(`      type="${ch.type}"`);
-    X.push(`      volume="${ch.volume}"`);
-    X.push(`      pan="${ch.pan + 64}"`);
-    X.push(`      muted="${ch.muted}"`);
-    X.push(`      color="${colorHex(ch.color)}"/>`);
-  });
-  X.push(`  </channels>`);
+  byteEv(id, v)  { this.u8(id); this.u8(v); }
+  wordEv(id, v)  { this.u8(id); this.u16(v); }
+  dwordEv(id, v) { this.u8(id); this.u32(v); }
 
-  X.push(`  <patterns count="${activePats.length}">`);
-  activePats.forEach((pat, pi) => {
-    X.push(`    <pattern index="${pi}" name="${esc(pat.name)}" color="${colorHex(pat.color)}" notes="${pat.notes.length}">`);
-    pat.notes.forEach(n => {
-      X.push(`      <note position="${n.pos}" length="${n.dur}" key="${n.key}" channel="${n.ch}" velocity="${n.vel}"/>`);
+  build() {
+    const p = this.proj;
+
+    this.text(EV.TITLE, p.title || 'Untitled');
+    this.text(EV.AUTHOR, p.author || '');
+    this.text(EV.GENRE, p.genre || '');
+    this.text(EV.COMMENT, p.comment || '');
+    this.text(EV.VERSION, p.version || '20.9.2');
+
+    this.dwordEv(EV.TEMPO_NEW, Math.round((p.tempo || 140) * 1000));
+    this.wordEv(EV.TIMESIG_NUM, p.timeSigNum || 4);
+    this.wordEv(EV.TIMESIG_DEN, p.timeSigDen || 4);
+    this.wordEv(EV.MAIN_VOL, p.mainVolume ?? 100);
+    this.wordEv(EV.MAIN_PITCH, p.mainPitch ?? 0);
+
+    p.channels.forEach((ch, i) => {
+      this.text(EV.CHAN_NAME, ch.name || `Channel ${i + 1}`);
+      this.byteEv(EV.ENABLED, ch.enabled === false ? 0 : 1);
+      this.byteEv(EV.VOL, Math.max(0, Math.min(255, Math.round(ch.volume ?? 100))));
+      this.byteEv(EV.PAN, Math.max(0, Math.min(255, Math.round((ch.pan ?? 0) + 64))));
+      this.byteEv(EV.MUTED, ch.muted ? 1 : 0);
+      this.byteEv(EV.CHAN_TYPE, ch.type ?? 0);
+      this.dwordEv(EV.COLOR, ch.color || 0);
     });
-    X.push(`    </pattern>`);
-  });
-  X.push(`  </patterns>`);
-  X.push(`</FLMobileProject>`);
 
-  zip.file('project.xml', X.join('\n'));
+    p.patterns.forEach((pat, idx) => {
+      this.wordEv(EV.CUR_PATTERN, idx);
+      this.text(EV.PAT_NAME, pat.name || `Pattern ${idx + 1}`);
+      this.dwordEv(EV.COLOR, pat.color || 0);
 
-  // ── README.txt ──
-  const R = [
-    '╔══════════════════════════════════════╗',
-    '║   FLP → FLM Conversion Report        ║',
-    '╚══════════════════════════════════════╝',
-    '',
-    `Title    : ${proj.title}`,
-    `Author   : ${proj.author || 'N/A'}`,
-    `Genre    : ${proj.genre  || 'N/A'}`,
-    `FL Ver.  : ${proj.version || 'Unknown'}`,
-    '',
-    '── Project Settings ─────────────────',
-    `Tempo    : ${bpm} BPM`,
-    `Time Sig : ${proj.timeSigNum}/${proj.timeSigDen}`,
-    `PPQ      : ${proj.ppq}`,
-    `Volume   : ${proj.mainVolume}`,
-    '',
-    '── Converted Content ────────────────',
-    `Channels : ${proj.channels.length}`,
-    `Patterns : ${activePats.length} (with notes)`,
-    `Notes    : ${totalNotes}`,
-    '',
-    proj.channels.map((ch, i) =>
-      `  Ch ${String(i+1).padStart(2,'0')}: ${ch.name}${ch.muted ? ' [MUTED]' : ''}`
-    ).join('\n'),
-    '',
-    '── Notes ────────────────────────────',
-    '• Plugin instruments are listed by name only.',
-    '  You must reassign samples manually in FL Studio Mobile.',
-    '• Automation clips, mixer effects, and send tracks',
-    '  are not included in this conversion.',
-    '• Pitch fine-tuning and modulation X/Y are omitted.',
-    '• Note parsing is best-effort; verify playback.',
-    '',
-    '── How to Open ──────────────────────',
-    '1. Transfer the .flm file to your device.',
-    '2. Open FL Studio Mobile.',
-    '3. Tap the folder icon → Import → Select this file.',
-    '',
-    'Converted with FLP→FLM Converter (Apache 2.0)',
-    'github.com/Brenninho123/FLP-to-FLM-Converter',
-  ];
-  zip.file('README.txt', R.join('\n'));
+      if (pat.notes && pat.notes.length) {
+        const noteBytes = new Uint8Array(pat.notes.length * 24);
+        pat.notes.forEach((n, i) => {
+          const o = i * 24;
+          const dv = new DataView(noteBytes.buffer, o, 24);
+          dv.setUint32(0, n.position >>> 0, true);
+          dv.setUint16(4, 0, true);
+          dv.setUint8(6, n.channel || 0);
+          dv.setUint8(7, 0);
+          dv.setUint16(8, n.finePitch || 0, true);
+          dv.setUint16(10, n.release || 0, true);
+          dv.setUint32(12, n.length >>> 0, true);
+          dv.setUint8(16, n.key ?? 60);
+          dv.setUint8(17, 0);
+          dv.setUint16(18, 0, true);
+          dv.setUint8(20, n.pan ?? 64);
+          dv.setUint8(21, n.velocity ?? 100);
+          dv.setUint16(22, 0, true);
+        });
+        this.u8(EV.PAT_NOTES);
+        this.varLen(noteBytes.length);
+        for (const b of noteBytes) this.u8(b);
+      }
+    });
 
-  return zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 }
-  });
+    const dataBytes = this.bytes;
+    this.bytes = [];
+    this.magic('FLhd');
+    this.u32(6);
+    this.u16(p.format || 0);
+    this.u16(p.channels.length || 0);
+    this.u16(p.ppq || 96);
+    this.magic('FLdt');
+    this.u32(dataBytes.length);
+    for (const b of dataBytes) this.u8(b);
+
+    return new Uint8Array(this.bytes);
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  UI
-// ═══════════════════════════════════════════════════════════════════
-let project = null;
+const dropZone     = document.getElementById('dropZone');
+const fileInput    = document.getElementById('fileInput');
+const progressWrap = document.getElementById('progressWrap');
+const progressLabel= document.getElementById('progressLabel');
+const progressPct  = document.getElementById('progressPct');
+const progressFill = document.getElementById('progressFill');
+const statusEl     = document.getElementById('status');
+const detPanel      = document.getElementById('detPanel');
+const detBody       = document.getElementById('detBody');
+const btnRow        = document.getElementById('btnRow');
+const convertBtn    = document.getElementById('convertBtn');
+const jsonBtn       = document.getElementById('jsonBtn');
 
-const $  = id => document.getElementById(id);
-const dz = $('dropZone'), fi = $('fileInput'),
-      pw = $('progressWrap'), pf = $('progressFill'), pl = $('progressLabel'), pp = $('progressPct'),
-      st = $('status'), dp = $('detPanel'), db = $('detBody'), cb = $('convertBtn');
+let currentProj = null;
+let currentFileBase = 'project';
+let activePatternIdx = 0;
 
-// Drag & drop
-dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('over'));
-dz.addEventListener('drop', e => {
-  e.preventDefault(); dz.classList.remove('over');
-  const f = e.dataTransfer.files[0];
+function setStatus(type, msg) {
+  statusEl.className = `status ${type}`;
+  statusEl.textContent = msg;
+}
+function clearStatus() {
+  statusEl.className = 'status';
+  statusEl.textContent = '';
+}
+function setProgress(pct, label) {
+  progressWrap.classList.remove('hidden');
+  progressFill.style.width = `${pct}%`;
+  progressPct.textContent = `${pct}%`;
+  if (label) progressLabel.textContent = label;
+}
+function hideProgress() { progressWrap.classList.add('hidden'); }
+
+['dragover','dragenter'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('over'); }));
+['dragleave','dragend','drop'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('over'); }));
+dropZone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
   if (f) handleFile(f);
 });
-fi.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
-
-// Convert button
-cb.addEventListener('click', async () => {
-  if (!project) return;
-  cb.disabled = true;
-  setStatus('info', '⚙️ Building .flm archive…');
-  try {
-    const blob = await generateFLM(project);
-    const safe = (project.title || 'project').replace(/[^\w\s\-]/g, '_').trim() || 'project';
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: safe + '.flm' });
-    a.click(); URL.revokeObjectURL(url);
-    setStatus('success', `✅ "${safe}.flm" downloaded — import it in FL Studio Mobile.`);
-  } catch (e) {
-    setStatus('error', '❌ Failed to generate file: ' + e.message);
-  }
-  cb.disabled = false;
+fileInput.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) handleFile(f);
 });
 
 function handleFile(file) {
-  if (!file.name.toLowerCase().endsWith('.flp')) {
-    setStatus('error', '❌ Not a .flp file. Please select a valid FL Studio project.'); return;
-  }
-  setStatus('info', `📂 Loading "${file.name}" — ${(file.size/1024).toFixed(1)} KB`);
-  pw.classList.remove('hidden');
-  setProgress(10, 'Reading binary…');
+  clearStatus();
+  detPanel.classList.add('hidden');
+  btnRow.classList.add('hidden');
+  currentFileBase = file.name.replace(/\.flp$/i, '') || 'project';
+  setProgress(10, 'Reading file…');
 
   const reader = new FileReader();
-  reader.onload = e => {
-    setProgress(45, 'Parsing FLP events…');
-    try {
-      const parser = new FLPParser(e.target.result);
-      setProgress(70, 'Detecting channels & notes…');
-      project = parser.parse();
-      setProgress(90, 'Rendering report…');
-      renderReport(project, file.name);
-      setProgress(100, 'Complete');
-      const chs  = project.channels.length;
-      const pats = project.patterns.filter(p => p.notes.length > 0).length;
-      const ntot = project.patterns.reduce((s, p) => s + p.notes.length, 0);
-      setStatus('success',
-        `✅ Parsed "${file.name}" — ${chs} channel${chs!==1?'s':''}, ${pats} pattern${pats!==1?'s':''} with notes, ${ntot.toLocaleString()} total notes.`
-      );
-      cb.classList.remove('hidden');
-    } catch (err) {
-      setStatus('error', '❌ ' + err.message);
-      pw.classList.add('hidden');
-    }
+  reader.onerror = () => { hideProgress(); setStatus('error', 'Could not read the file.'); };
+  reader.onload = () => {
+    setProgress(55, 'Parsing FLP events…');
+    setTimeout(() => {
+      try {
+        const parser = new FLPParser(reader.result);
+        const proj = parser.parse();
+        currentProj = proj;
+        setProgress(100, 'Done');
+        setTimeout(hideProgress, 350);
+        renderDetection(proj);
+        if (proj.warnings.length) {
+          setStatus('info', `Parsed with ${proj.warnings.length} warning(s) — see below.`);
+        } else {
+          setStatus('success', `Parsed "${proj.title}" successfully.`);
+        }
+        btnRow.classList.remove('hidden');
+      } catch (err) {
+        hideProgress();
+        setStatus('error', `Failed to parse: ${err.message}`);
+      }
+    }, 30);
   };
-  reader.onerror = () => setStatus('error', '❌ Failed to read the file.');
   reader.readAsArrayBuffer(file);
 }
 
-function setProgress(pct, label) {
-  pf.style.width = pct + '%';
-  pl.textContent = label;
-  pp.textContent = pct + '%';
-}
-function setStatus(type, msg) { st.className = 'status ' + type; st.textContent = msg; }
+function renderDetection(proj) {
+  const totalNotes = proj.patterns.reduce((s, p) => s + p.notes.length, 0);
+  let lastTick = 0;
+  proj.patterns.forEach(p => p.notes.forEach(n => { lastTick = Math.max(lastTick, n.position + n.length); }));
+  const secondsPerTick = 60 / (proj.tempo || 140) / (proj.ppq || 96);
+  const durationSec = lastTick * secondsPerTick;
 
-// ── Detection report renderer ──
-function renderReport(p, filename) {
-  const activePats = p.patterns.filter(pt => pt.notes.length > 0);
-  const allNotes   = activePats.flatMap(pt => pt.notes);
-  const totalNotes = allNotes.length;
-  const bpm        = Math.round(p.tempo * 10) / 10;
+  detBody.innerHTML = '';
 
-  let html = '';
+  const grid = document.createElement('div');
+  grid.className = 'info-grid';
+  const cards = [
+    ['Title', escapeHtml(proj.title) || 'Untitled'],
+    ['Tempo', `${proj.tempo.toFixed(2)}<span class="info-unit"> BPM</span>`],
+    ['Time Sig', `${proj.timeSigNum}/${proj.timeSigDen}`],
+    ['PPQ', proj.ppq],
+    ['Channels', proj.channels.length],
+    ['Patterns', proj.patterns.length],
+    ['Notes', totalNotes],
+    ['Est. length', formatDuration(durationSec)],
+  ];
+  cards.forEach(([label, value]) => {
+    const card = document.createElement('div');
+    card.className = 'info-card';
+    card.innerHTML = `<div class="info-label">${label}</div><div class="info-value">${value}</div>`;
+    grid.appendChild(card);
+  });
+  detBody.appendChild(grid);
 
-  // ── Info grid
-  html += `<div class="info-grid">
-    <div class="info-card">
-      <div class="info-label">Tempo</div>
-      <div class="info-value">${bpm} <span class="info-unit">BPM</span></div>
-    </div>
-    <div class="info-card">
-      <div class="info-label">Time Sig</div>
-      <div class="info-value">${p.timeSigNum}<span class="info-unit">/${p.timeSigDen}</span></div>
-    </div>
-    <div class="info-card">
-      <div class="info-label">Channels</div>
-      <div class="info-value">${p.channels.length}</div>
-    </div>
-    <div class="info-card">
-      <div class="info-label">PPQ</div>
-      <div class="info-value">${p.ppq}</div>
-    </div>
-  </div>`;
-
-  // ── Project metadata
-  const meta = [];
-  if (p.title && p.title !== 'Untitled') meta.push(`📝 ${p.title}`);
-  if (p.author)  meta.push(`👤 ${p.author}`);
-  if (p.genre)   meta.push(`🎸 ${p.genre}`);
-  if (p.version) meta.push(`🔖 FL ${p.version}`);
-  if (meta.length) {
-    html += `<div class="section-label">Project Info</div>
-    <div class="tag-list">${meta.map(m => `<div class="tag">${m}</div>`).join('')}</div>`;
+  if (proj.author || proj.genre || proj.comment || proj.version) {
+    const meta = document.createElement('div');
+    meta.className = 'stat-row';
+    if (proj.author)  meta.innerHTML += `<div class="stat"><strong>Author:</strong> ${escapeHtml(proj.author)}</div>`;
+    if (proj.genre)   meta.innerHTML += `<div class="stat"><strong>Genre:</strong> ${escapeHtml(proj.genre)}</div>`;
+    if (proj.version) meta.innerHTML += `<div class="stat"><strong>FL version:</strong> ${escapeHtml(proj.version)}</div>`;
+    detBody.appendChild(meta);
   }
 
-  // ── Channel list
-  if (p.channels.length > 0) {
-    html += `<div class="section-label">Channels (${p.channels.length})</div>
-    <div class="tag-list">`;
-    p.channels.forEach(ch => {
-      const icon = ch.muted ? '🔇' : (ch.type === 0 ? '🎹' : ch.type === 1 ? '🥁' : '🎛️');
-      html += `<div class="tag ${ch.muted ? 'muted' : ''}">${icon} ${ch.name}</div>`;
+  const chLabel = document.createElement('div');
+  chLabel.className = 'section-label';
+  chLabel.textContent = `Channels (${proj.channels.length})`;
+  detBody.appendChild(chLabel);
+
+  const chList = document.createElement('div');
+  chList.className = 'channel-list';
+  proj.channels.forEach((ch, i) => {
+    const row = document.createElement('div');
+    row.className = 'channel-item';
+    const swatchColor = rgbFromFlpColor(ch.color) || colorForIndex(i);
+    row.innerHTML = `
+      <div class="channel-swatch" style="background:${swatchColor}"></div>
+      <div class="channel-name">${escapeHtml(ch.name)}</div>
+      <div class="channel-meta">
+        <span>vol ${ch.volume}</span>
+        <span>pan ${ch.pan}</span>
+        ${ch.muted ? '<span class="off">muted</span>' : ''}
+        ${ch.enabled === false ? '<span class="off">disabled</span>' : ''}
+      </div>`;
+    chList.appendChild(row);
+  });
+  detBody.appendChild(chList);
+
+  const patLabel = document.createElement('div');
+  patLabel.className = 'section-label';
+  patLabel.textContent = `Patterns (${proj.patterns.length})`;
+  detBody.appendChild(patLabel);
+
+  const tagList = document.createElement('div');
+  tagList.className = 'tag-list';
+  activePatternIdx = proj.patterns.findIndex(p => p.notes.length) ;
+  if (activePatternIdx < 0) activePatternIdx = 0;
+  proj.patterns.forEach((pat, i) => {
+    const tag = document.createElement('div');
+    tag.className = 'tag' + (i === activePatternIdx ? ' active' : '') + (pat.notes.length ? '' : ' muted');
+    const swatchColor = rgbFromFlpColor(pat.color) || colorForIndex(i);
+    tag.innerHTML = `<span class="tag-swatch" style="background:${swatchColor}"></span>${escapeHtml(pat.name)} <span class="tag-count">${pat.notes.length}</span>`;
+    tag.style.cursor = 'pointer';
+    tag.addEventListener('click', () => {
+      activePatternIdx = i;
+      tagList.querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
+      tag.classList.add('active');
+      drawPianoRoll(proj.patterns[i]);
     });
-    html += `</div>`;
+    tagList.appendChild(tag);
+  });
+  detBody.appendChild(tagList);
+
+  const rollWrap = document.createElement('div');
+  rollWrap.className = 'piano-roll';
+  rollWrap.innerHTML = '<canvas id="rollCanvas"></canvas>';
+  detBody.appendChild(rollWrap);
+  if (proj.patterns.length) {
+    requestAnimationFrame(() => drawPianoRoll(proj.patterns[activePatternIdx]));
+  } else {
+    rollWrap.innerHTML = '<div class="empty-hint">no patterns detected</div>';
   }
 
-  // ── Patterns
-  if (activePats.length > 0) {
-    html += `<div class="section-label">Patterns with Notes (${activePats.length})</div>
-    <div class="tag-list">`;
-    activePats.forEach(pt => {
-      html += `<div class="tag">🎼 ${pt.name} <span class="tag-count">${pt.notes.length}</span></div>`;
-    });
-    html += `</div>`;
+  if (proj.warnings.length) {
+    const box = document.createElement('div');
+    box.className = 'warning-box';
+    box.innerHTML = `<strong>Warnings</strong><ul>${proj.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+    detBody.appendChild(box);
   }
 
-  // ── Piano roll mini-viz + stats
-  if (totalNotes > 0) {
-    const keys = allNotes.map(n => n.key);
-    const minK = Math.min(...keys), maxK = Math.max(...keys);
+  const note = document.createElement('div');
+  note.className = 'note-box';
+  note.textContent = 'Image-Line has never published the .flm binary spec, so this writes the song back out using the same FLhd/FLdt event-chunk container FL Studio itself uses for .flp — the same mechanism desktop FL Studio relies on to import .flm directly. It is a well-informed guess, not a confirmed match for FL Studio Mobile\'s own parser.';
+  detBody.appendChild(note);
 
-    html += `<div class="section-label">Note Range</div>`;
-    html += `<div class="piano-roll"><canvas id="rollCanvas"></canvas></div>`;
-    html += `<div class="stat-row" style="margin-top:10px">
-      <div class="stat">Total: <strong>${totalNotes.toLocaleString()}</strong></div>
-      <div class="stat">Range: <strong>${flKeyToName(minK)}</strong> – <strong>${flKeyToName(maxK)}</strong></div>
-      <div class="stat">Patterns: <strong>${activePats.length}</strong></div>
-    </div>`;
-  }
-
-  // ── Warnings
-  if (p.warnings.length) {
-    html += p.warnings.map(w => `<div class="warning-box">⚠️ ${w}</div>`).join('');
-  }
-
-  db.innerHTML = html;
-  dp.classList.remove('hidden');
-
-  // Draw mini piano-roll after DOM updates
-  if (totalNotes > 0) {
-    requestAnimationFrame(() => drawRoll(project));
-  }
+  detPanel.classList.remove('hidden');
 }
 
-function drawRoll(p) {
+function drawPianoRoll(pattern) {
   const canvas = document.getElementById('rollCanvas');
   if (!canvas) return;
-  const parent = canvas.parentElement;
-  canvas.width  = parent.clientWidth * devicePixelRatio;
-  canvas.height = parent.clientHeight * devicePixelRatio;
-  canvas.style.width  = parent.clientWidth + 'px';
-  canvas.style.height = parent.clientHeight + 'px';
-
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 600, h = canvas.clientHeight || 130;
+  canvas.width = w * dpr; canvas.height = h * dpr;
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
 
-  // Background
-  ctx.fillStyle = '#12121F';
-  ctx.fillRect(0, 0, W, H);
+  if (!pattern || !pattern.notes.length) return;
 
-  const activePats = p.patterns.filter(pt => pt.notes.length > 0);
-  const allNotes   = activePats.flatMap(pt => pt.notes);
-  if (!allNotes.length) return;
-
-  const allPos = allNotes.map(n => n.pos);
-  const maxPos = Math.max(...allPos) + Math.max(...allNotes.map(n => n.dur || p.ppq));
-  const allKey = allNotes.map(n => n.key);
-  const minKey = Math.min(...allKey), maxKey = Math.max(...allKey);
-  const keyRange = Math.max(maxKey - minKey, 12);
-
-  // Draw key guide lines (octave separators)
-  ctx.strokeStyle = 'rgba(30,30,50,0.8)';
-  ctx.lineWidth = 1;
-  for (let k = Math.floor(minKey / 12) * 12; k <= maxKey + 12; k += 12) {
-    const y = H - ((k - minKey) / keyRange) * H;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-  }
-
-  // Draw notes
-  allNotes.forEach(n => {
-    const x = (n.pos / maxPos) * W;
-    const w = Math.max(2, (n.dur / maxPos) * W);
-    const y = H - ((n.key - minKey + 1) / (keyRange + 2)) * H;
-    const h = Math.max(2, H / (keyRange + 2));
-
-    const hue = 25 + (n.vel / 127) * 20;
-    const sat = 80 + (n.vel / 127) * 20;
-    const lit = 45 + (n.vel / 127) * 25;
-    ctx.fillStyle = `hsl(${hue},${sat}%,${lit}%)`;
-    ctx.beginPath();
-    ctx.roundRect(x, y - h / 2, w, h, 1);
-    ctx.fill();
+  let minKey = 127, maxKey = 0, minPos = Infinity, maxPos = 0;
+  pattern.notes.forEach(n => {
+    minKey = Math.min(minKey, n.key);
+    maxKey = Math.max(maxKey, n.key);
+    minPos = Math.min(minPos, n.position);
+    maxPos = Math.max(maxPos, n.position + n.length);
   });
+  const keyRange = Math.max(1, maxKey - minKey + 2);
+  const posRange = Math.max(1, maxPos - minPos);
+  const rowH = h / keyRange;
+
+  pattern.notes.forEach(n => {
+    const x = ((n.position - minPos) / posRange) * (w - 4) + 2;
+    const nw = Math.max(2, (n.length / posRange) * (w - 4));
+    const y = h - ((n.key - minKey + 1) / keyRange) * h;
+    ctx.fillStyle = colorForIndex(n.channel || 0);
+    ctx.globalAlpha = 0.55 + (n.velocity || 100) / 127 * 0.45;
+    ctx.fillRect(x, y, nw, Math.max(2, rowH - 1));
+  });
+  ctx.globalAlpha = 1;
+}
+
+convertBtn.addEventListener('click', () => {
+  if (!currentProj) return;
+  try {
+    const writer = new FLMWriter(currentProj);
+    const bytes = writer.build();
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    downloadBlob(blob, `${currentFileBase}.flm`);
+    setStatus('success', `Generated ${currentFileBase}.flm (${(bytes.length / 1024).toFixed(1)} KB). Test it in FL Studio Mobile and report back what happens so the layout can be refined.`);
+  } catch (err) {
+    setStatus('error', `Could not build the .flm file: ${err.message}`);
+  }
+});
+
+jsonBtn.addEventListener('click', () => {
+  if (!currentProj) return;
+  const blob = new Blob([JSON.stringify(currentProj, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, `${currentFileBase}.analysis.json`);
+});
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 </script>
 </body>
