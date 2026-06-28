@@ -332,15 +332,22 @@ footer {
 
 <script>
 const EV = {
-  ENABLED: 0, VOL: 2, PAN: 3, MUTED: 7, CHAN_TYPE: 11,
-  TEMPO_OLD: 64, CUR_PATTERN: 65, MAIN_VOL: 66, MAIN_PITCH: 67, TIMESIG_NUM: 73, TIMESIG_DEN: 74,
-  COLOR: 128, TEMPO_NEW: 133,
-  CHAN_NAME: 192, PAT_NAME: 193, TITLE: 199, COMMENT: 200, AUTHOR: 201, VERSION: 203, GENRE: 209, PAT_NOTES: 224,
+  ENABLED: 0, VOL: 2, PAN: 3, MAIN_VOL: 12, CHAN_TYPE: 21,
+  TIMESIG_NUM: 17, TIMESIG_DEN: 18,
+  TEMPO_OLD: 66, CUR_PATTERN: 65, MAIN_PITCH: 80, CHAN_NEW: 64,
+  COLOR: 128, PAT_COLOR: 150, TEMPO_NEW: 156,
+  CHAN_NAME: 192, PAT_NAME: 193, TITLE: 194, COMMENT: 195, VERSION: 199, GENRE: 206, AUTHOR: 207, PAT_NOTES: 224,
 };
 
 const PALETTE = ['#FF7A00','#4FA3FF','#00D97E','#FF3B5C','#FFD000','#B06AFF','#00C2D9','#FF6AC2'];
 
 function colorForIndex(i) { return PALETTE[i % PALETTE.length]; }
+
+function resolveChannelIndex(channels, rackChannel) {
+  const byIid = channels.findIndex(c => c.iid === rackChannel);
+  if (byIid >= 0) return byIid;
+  return Math.min(Math.max(0, channels.length - 1), Math.max(0, rackChannel ?? 0));
+}
 
 function rgbFromFlpColor(c) {
   if (!c) return null;
@@ -446,13 +453,17 @@ class FLPParser {
   }
 
   onByte(id, v) {
+    switch (id) {
+      case EV.MAIN_VOL:    this.proj.mainVolume = v; return;
+      case EV.TIMESIG_NUM: this.proj.timeSigNum = v || 4; return;
+      case EV.TIMESIG_DEN: this.proj.timeSigDen = v || 4; return;
+    }
     const ch = this.curCh;
     if (!ch) return;
     switch (id) {
       case EV.ENABLED:   ch.enabled = v !== 0; break;
       case EV.VOL:       ch.volume  = v;       break;
       case EV.PAN:       ch.pan     = v - 64;  break;
-      case EV.MUTED:     ch.muted   = v !== 0; break;
       case EV.CHAN_TYPE: ch.type    = v;       break;
     }
   }
@@ -461,17 +472,20 @@ class FLPParser {
     switch (id) {
       case EV.TEMPO_OLD:   if (v > 0) this.proj.tempo = v; break;
       case EV.CUR_PATTERN: this.switchPattern(v); break;
-      case EV.MAIN_VOL:    this.proj.mainVolume = v; break;
-      case EV.MAIN_PITCH:  this.proj.mainPitch  = v; break;
-      case EV.TIMESIG_NUM: this.proj.timeSigNum = v || 4; break;
-      case EV.TIMESIG_DEN: this.proj.timeSigDen = v || 4; break;
+      case EV.MAIN_PITCH:  this.proj.mainPitch = v > 32767 ? v - 65536 : v; break;
+      case EV.CHAN_NEW:
+        this.curCh = { iid: v, name: `Channel ${this.proj.channels.length + 1}`, volume: 100, pan: 0, enabled: true, muted: false, type: 0, color: 0 };
+        this.proj.channels.push(this.curCh);
+        break;
     }
   }
 
   onDWord(id, v) {
     switch (id) {
       case EV.COLOR:
-        if (this.curCh)  this.curCh.color  = v;
+        if (this.curCh) this.curCh.color = v;
+        break;
+      case EV.PAT_COLOR:
         if (this.curPat) this.curPat.color = v;
         break;
       case EV.TEMPO_NEW:
@@ -483,9 +497,14 @@ class FLPParser {
   onData(id, bytes, len) {
     switch (id) {
       case EV.CHAN_NAME: {
-        const name = this.decode(bytes) || `Channel ${this.proj.channels.length + 1}`;
-        this.curCh = { name, volume: 100, pan: 0, enabled: true, muted: false, type: 0, color: 0 };
-        this.proj.channels.push(this.curCh);
+        const name = this.decode(bytes);
+        if (!this.curCh || this.curCh._namedAlready) {
+          this.curCh = { iid: null, name: name || `Channel ${this.proj.channels.length + 1}`, volume: 100, pan: 0, enabled: true, muted: false, type: 0, color: 0 };
+          this.proj.channels.push(this.curCh);
+        } else if (name) {
+          this.curCh.name = name;
+        }
+        this.curCh._namedAlready = true;
         break;
       }
       case EV.PAT_NAME: {
@@ -516,51 +535,33 @@ class FLPParser {
   }
 
   parseNotes(bytes) {
-    if (!this.curPat || bytes.length < 16) return;
+    if (!this.curPat || bytes.length < 24) return;
 
-    let ns = 0;
-    if      (bytes.length % 24 === 0) ns = 24;
-    else if (bytes.length % 20 === 0) ns = 20;
-    else if (bytes.length % 16 === 0) ns = 16;
-    else return;
+    if (bytes.length % 24 !== 0) {
+      this.proj.warnings.push(`Note block of ${bytes.length} bytes doesn't divide evenly by 24 — this FL version may use a different note struct; notes in "${this.curPat.name}" were skipped.`);
+      return;
+    }
 
-    const count = Math.floor(bytes.length / ns);
-    const channelIndex = Math.max(0, this.proj.channels.length - 1);
-
+    const count = Math.floor(bytes.length / 24);
     for (let i = 0; i < count; i++) {
-      const o = i * ns;
-      if (o + ns > bytes.length) break;
-      const dv = new DataView(bytes.buffer, bytes.byteOffset + o, ns);
+      const o = i * 24;
+      const dv = new DataView(bytes.buffer, bytes.byteOffset + o, 24);
 
-      const position = dv.getUint32(0, true);
-      let length = 0, key = 60, finePitch = 0, release = 0, pan = 64, velocity = 100, rackChannel = channelIndex;
-
-      if (ns === 24) {
-        rackChannel = dv.getUint8(6);
-        finePitch   = dv.getUint16(8, true);
-        release     = dv.getUint16(10, true);
-        length      = dv.getUint32(12, true);
-        key         = dv.getUint8(16);
-        pan         = dv.getUint8(20);
-        velocity    = dv.getUint8(21);
-      } else if (ns === 20) {
-        rackChannel = dv.getUint8(6);
-        finePitch   = dv.getUint16(8, true);
-        release     = dv.getUint16(10, true);
-        length      = dv.getUint32(12, true);
-        key         = dv.getUint8(16);
-        pan         = dv.getUint8(18);
-        velocity    = dv.getUint8(19);
-      } else {
-        length   = dv.getUint32(4, true);
-        key      = dv.getUint8(8);
-        pan      = dv.getUint8(ns - 2);
-        velocity = dv.getUint8(ns - 1);
-      }
+      const position    = dv.getUint32(0, true);
+      const rackChannel = dv.getUint16(6, true);
+      const length      = dv.getUint32(8, true);
+      const key         = dv.getUint16(12, true);
+      const group       = dv.getUint16(14, true);
+      const finePitch   = dv.getUint8(16);
+      const release     = dv.getUint8(18);
+      const midiChannel = dv.getUint8(19);
+      const pan         = dv.getUint8(20);
+      const velocity    = dv.getUint8(21);
 
       if (length <= 0 || length > this.proj.ppq * 256) continue;
+      if (key > 131) continue;
 
-      this.curPat.notes.push({ position, length, key, finePitch, release, pan, velocity, channel: rackChannel });
+      this.curPat.notes.push({ position, length, key, finePitch, release, pan, velocity, group, midiChannel, channel: rackChannel });
     }
   }
 }
@@ -613,17 +614,17 @@ class FLMWriter {
     this.text(EV.VERSION, p.version || '20.9.2');
 
     this.dwordEv(EV.TEMPO_NEW, Math.round((p.tempo || 140) * 1000));
-    this.wordEv(EV.TIMESIG_NUM, p.timeSigNum || 4);
-    this.wordEv(EV.TIMESIG_DEN, p.timeSigDen || 4);
-    this.wordEv(EV.MAIN_VOL, p.mainVolume ?? 100);
-    this.wordEv(EV.MAIN_PITCH, p.mainPitch ?? 0);
+    this.byteEv(EV.TIMESIG_NUM, p.timeSigNum || 4);
+    this.byteEv(EV.TIMESIG_DEN, p.timeSigDen || 4);
+    this.byteEv(EV.MAIN_VOL, Math.max(0, Math.min(255, p.mainVolume ?? 100)));
+    this.wordEv(EV.MAIN_PITCH, ((p.mainPitch ?? 0) + 65536) & 0xFFFF);
 
     p.channels.forEach((ch, i) => {
+      this.wordEv(EV.CHAN_NEW, ch.iid ?? i);
       this.text(EV.CHAN_NAME, ch.name || `Channel ${i + 1}`);
       this.byteEv(EV.ENABLED, ch.enabled === false ? 0 : 1);
       this.byteEv(EV.VOL, Math.max(0, Math.min(255, Math.round(ch.volume ?? 100))));
       this.byteEv(EV.PAN, Math.max(0, Math.min(255, Math.round((ch.pan ?? 0) + 64))));
-      this.byteEv(EV.MUTED, ch.muted ? 1 : 0);
       this.byteEv(EV.CHAN_TYPE, ch.type ?? 0);
       this.dwordEv(EV.COLOR, ch.color || 0);
     });
@@ -631,7 +632,7 @@ class FLMWriter {
     p.patterns.forEach((pat, idx) => {
       this.wordEv(EV.CUR_PATTERN, idx);
       this.text(EV.PAT_NAME, pat.name || `Pattern ${idx + 1}`);
-      this.dwordEv(EV.COLOR, pat.color || 0);
+      this.dwordEv(EV.PAT_COLOR, pat.color || 0);
 
       if (pat.notes && pat.notes.length) {
         const noteBytes = new Uint8Array(pat.notes.length * 24);
@@ -640,17 +641,18 @@ class FLMWriter {
           const dv = new DataView(noteBytes.buffer, o, 24);
           dv.setUint32(0, n.position >>> 0, true);
           dv.setUint16(4, 0, true);
-          dv.setUint8(6, n.channel || 0);
-          dv.setUint8(7, 0);
-          dv.setUint16(8, n.finePitch || 0, true);
-          dv.setUint16(10, n.release || 0, true);
-          dv.setUint32(12, n.length >>> 0, true);
-          dv.setUint8(16, n.key ?? 60);
+          dv.setUint16(6, n.channel || 0, true);
+          dv.setUint32(8, n.length >>> 0, true);
+          dv.setUint16(12, n.key ?? 60, true);
+          dv.setUint16(14, n.group || 0, true);
+          dv.setUint8(16, n.finePitch ?? 120);
           dv.setUint8(17, 0);
-          dv.setUint16(18, 0, true);
+          dv.setUint8(18, n.release ?? 64);
+          dv.setUint8(19, n.midiChannel ?? 0);
           dv.setUint8(20, n.pan ?? 64);
           dv.setUint8(21, n.velocity ?? 100);
-          dv.setUint16(22, 0, true);
+          dv.setUint8(22, 128);
+          dv.setUint8(23, 128);
         });
         this.u8(EV.PAT_NOTES);
         this.varLen(noteBytes.length);
@@ -739,7 +741,7 @@ class MidiWriter {
 
     p.patterns.forEach((pat, pi) => {
       pat.notes.forEach(n => {
-        const idx = Math.min(Math.max(0, p.channels.length - 1), Math.max(0, n.channel ?? 0));
+        const idx = resolveChannelIndex(p.channels, n.channel ?? 0);
         if (onlyChannelIndex !== null && idx !== onlyChannelIndex) return;
         const midiCh = onlyChannelIndex !== null ? 0 : idx % 16;
         const tick = patternOffsets[pi] + n.position;
